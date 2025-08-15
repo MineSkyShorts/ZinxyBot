@@ -1,148 +1,5 @@
-async function showWinnerModal(winner) {
-    const existingModal = document.querySelector('.modal--show');
-    if (existingModal) {
-      console.log('Modal already open, closing previous one');
-      existingModal.classList.remove('modal--show');
-    }
-    
-    // Set current winner for message tracking
-    AppState.winner.currentWinner = winner;
-    AppState.winner.winTime = new Date();
-    AppState.winner.messagesAfterWin = [];
-    
-    const modal = document.getElementById('winnerModal');
-    const winnerName = document.getElementById('winnerName');
-    const winnerAvatar = document.getElementById('winnerAvatar');
-    const winnerAvatarFallback = document.getElementById('winnerAvatarFallback');
-    const winnerLuck = document.getElementById('winnerLuck');
-    const winnerUserInfo = document.getElementById('winnerUserInfo');
-    const winnerMessages = document.getElementById('winnerMessages');
-    
-    if (!modal || !winnerName) return;
-
-    winnerName.textContent = winner.displayName || winner.login;
-    
-    // Profilbild setzen - mit Fallback
-    if (winner.profileImageUrl && winnerAvatar) {
-      winnerAvatar.src = winner.profileImageUrl;
-      winnerAvatar.style.display = 'block';
-      if (winnerAvatarFallback) winnerAvatarFallback.style.display = 'none';
-      console.log('🖼️ Setting winner avatar:', winner.profileImageUrl);
-      
-      // Error handler für Bild-Ladefehler
-      winnerAvatar.onerror = () => {
-        console.log('❌ Failed to load winner avatar, using fallback');
-        winnerAvatar.style.display = 'none';
-        if (winnerAvatarFallback) {
-          winnerAvatarFallback.style.display = 'flex';
-          winnerAvatarFallback.textContent = (winner.displayName || winner.login).charAt(0).toUpperCase();
-        }
-      };
-    } else {
-      // Fallback: Ersten Buchstaben anzeigen
-      if (winnerAvatar) winnerAvatar.style.display = 'none';
-      if (winnerAvatarFallback) {
-        winnerAvatarFallback.style.display = 'flex';
-        winnerAvatarFallback.textContent = (winner.displayName || winner.login).charAt(0).toUpperCase();
-      }
-      console.log('⚠️ No profile image for winner, using fallback');
-    }
-    
-    if (winnerLuck) {
-      if (winner.luck && winner.luck > 1) {
-        winnerLuck.textContent = `${winner.luck.toFixed(2)}x Luck`;
-        winnerLuck.style.display = 'block';
-      } else {
-        winnerLuck.style.display = 'none';
-      }
-    }
-
-    // Load and display user info
-    if (winner.userId && winnerUserInfo) {
-      winnerUserInfo.style.display = 'block';
-      
-      try {
-        const userInfo = await loadUserInfo(winner.userId, winner.login);
-        
-        if (userInfo) {
-          const createdAtEl = document.getElementById('winnerCreatedAt');
-          const followedAtEl = document.getElementById('winnerFollowedAt');
-          const followInfoItem = document.getElementById('followInfoItem');
-          const subInfoItem = document.getElementById('subInfoItem');
-          const winnerSubInfo = document.getElementById('winnerSubInfo');
-          
-          if (createdAtEl) {
-            if (userInfo.createdAt) {
-              createdAtEl.textContent = formatDate(userInfo.createdAt);
-            } else {
-              createdAtEl.textContent = 'Unknown';
-            }
-          }
-          
-          if (followInfoItem && followedAtEl) {
-            if (userInfo.isFollowing && userInfo.followedAt) {
-              followInfoItem.style.display = 'flex';
-              followedAtEl.textContent = formatDate(userInfo.followedAt);
-            } else {
-              followInfoItem.style.display = 'none';
-            }
-          }
-          
-          // Check if user is subscriber from badges
-          const isSubscriber = winner.badges && winner.badges.some(badge => 
-            badge.name === 'subscriber' || badge.name === 'founder'
-          );
-          
-          if (subInfoItem && winnerSubInfo) {
-            if (isSubscriber) {
-              subInfoItem.style.display = 'flex';
-              
-              // Try to get sub months from badge info
-              const subBadge = winner.badges.find(badge => badge.name === 'subscriber');
-              if (subBadge && subBadge.version) {
-                const months = parseInt(subBadge.version);
-                if (!isNaN(months)) {
-                  winnerSubInfo.textContent = `${months} month${months !== 1 ? 's' : ''}`;
-                } else {
-                  winnerSubInfo.textContent = 'Yes';
-                }
-              } else {
-                winnerSubInfo.textContent = 'Yes';
-              }
-            } else {
-              subInfoItem.style.display = 'none';
-            }
-          }
-        } else {
-          // Fallback wenn User Info nicht geladen werden kann
-          const createdAtEl = document.getElementById('winnerCreatedAt');
-          if (createdAtEl) {
-            createdAtEl.textContent = 'Unable to load';
-          }
-        }
-      } catch (e) {
-        console.error('Failed to load user info:', e);
-        const createdAtEl = document.getElementById('winnerCreatedAt');
-        if (createdAtEl) {
-          createdAtEl.textContent = 'Error loading data';
-        }
-      }
-    }
-
-    // Show messages section
-    if (winnerMessages) {
-      winnerMessages.style.display = 'block';
-      updateWinnerMessages();
-    }
-
-    modal.classList.add('modal--show');
-    createConfetti();
-    
-    console.log('🏆 Winner modal opened for:', winner.displayName || winner.login);
-    
-    // Modal bleibt permanent offen - KEIN Auto-Close Timer!
-  }// ---- Enhanced Dashboard Bootstrapping - KORRIGIERT ----
-// DATEI: app.js - Korrigiert für besseres State Management und Winner Info
+// ---- Enhanced Dashboard Bootstrapping - KORRIGIERT ----
+// DATEI: app.js - Korrigiert fÃ¼r besseres State Management und Winner Info
 
 document.addEventListener('DOMContentLoaded', () => { 
   // Initialize Lucide icons first
@@ -275,7 +132,7 @@ async function boot() {
       }, 1000);
       
       this.updateDisplay();
-      console.log(`⏰ Timer started for ${durationMinutes} minutes`);
+      console.log(`â° Timer started for ${durationMinutes} minutes`);
     },
     
     stop() {
@@ -289,11 +146,11 @@ async function boot() {
     },
     
     pause() {
-      console.log('⸸️ Timer paused at:', this.formatTime(AppState.giveaway.timeRemaining));
+      console.log('â¸ï¸ Timer paused at:', this.formatTime(AppState.giveaway.timeRemaining));
     },
     
     resume() {
-      console.log('▶️ Timer resumed at:', this.formatTime(AppState.giveaway.timeRemaining));
+      console.log('â–¶ï¸ Timer resumed at:', this.formatTime(AppState.giveaway.timeRemaining));
     },
     
     updateDisplay() {
@@ -319,7 +176,7 @@ async function boot() {
     },
     
     onTimerEnd() {
-      console.log('⏰ Timer ended - Auto-picking winner');
+      console.log('â° Timer ended - Auto-picking winner');
       this.stop();
       StateManager.updateStatus('INACTIVE');
       
@@ -339,7 +196,7 @@ async function boot() {
       const oldStatus = AppState.giveaway.status;
       AppState.giveaway.status = newStatus;
       
-      console.log(`📊 Status changed: ${oldStatus} → ${newStatus}`, data);
+      console.log(`ðŸ“Š Status changed: ${oldStatus} â†’ ${newStatus}`, data);
       
       this.updateStatusDisplay();
       this.updateButtonStates();
@@ -515,14 +372,14 @@ async function boot() {
     showResetConfirmation() {
       if (elements.resetConfirmToast) {
         elements.resetConfirmToast.classList.add('show');
-        console.log('⚠️ Reset confirmation shown');
+        console.log('âš ï¸ Reset confirmation shown');
       }
     },
     
     hideResetConfirmation() {
       if (elements.resetConfirmToast) {
         elements.resetConfirmToast.classList.remove('show');
-        console.log('⚠️ Reset confirmation hidden');
+        console.log('âš ï¸ Reset confirmation hidden');
       }
     },
     
@@ -550,8 +407,246 @@ async function boot() {
     }
   };
 
-  // Settings Management System
+  // Settings Management System - VOLLSTÃ„NDIG IMPLEMENTIERT
   const SettingsManager = {
+    currentSettings: {
+      luck: {
+        enabled: true,
+        bits: [
+          { min: 1000, mult: 1.2 },
+          { min: 5000, mult: 1.5 },
+          { min: 10000, mult: 2.0 },
+          { min: 25000, mult: 3.0 },
+          { min: 50000, mult: 4.0 },
+          { min: 100000, mult: 5.0 },
+          { min: 1000000, mult: 10.0 }
+        ],
+        subs: [
+          { min: 1, mult: 1.2 },
+          { min: 3, mult: 1.5 },
+          { min: 6, mult: 2.0 },
+          { min: 9, mult: 2.5 },
+          { min: 12, mult: 3.0 },
+          { min: 18, mult: 3.5 },
+          { min: 24, mult: 4.0 }
+        ]
+      },
+      general: {
+        autoJoinHost: true,
+        antispam: true
+      }
+    },
+
+    async loadSettings() {
+      try {
+        // Lade Luck Settings
+        const luckResponse = await fetch('/api/settings/luck');
+        if (luckResponse.ok) {
+          this.currentSettings.luck = await luckResponse.json();
+        }
+
+        // Lade General Settings
+        const generalResponse = await fetch('/api/settings/general');
+        if (generalResponse.ok) {
+          this.currentSettings.general = await generalResponse.json();
+        }
+
+        this.updateSettingsUI();
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+      }
+    },
+
+    updateSettingsUI() {
+      // Update Bit Badge Sliders
+      const bitSliders = document.querySelectorAll('[data-bits-range]');
+      bitSliders.forEach(slider => {
+        const minValue = parseInt(slider.dataset.min);
+        const setting = this.currentSettings.luck.bits.find(b => b.min === minValue);
+        if (setting) {
+          slider.value = setting.mult;
+          const output = slider.parentElement.querySelector('o');
+          if (output) {
+            output.textContent = `${setting.mult.toFixed(2)}x`;
+          }
+        }
+      });
+
+      // Update Subscription Sliders
+      const subSliders = document.querySelectorAll('[data-subs-range]');
+      subSliders.forEach(slider => {
+        const minValue = parseInt(slider.dataset.min);
+        const setting = this.currentSettings.luck.subs.find(s => s.min === minValue);
+        if (setting) {
+          slider.value = setting.mult;
+          const output = slider.parentElement.querySelector('o');
+          if (output) {
+            output.textContent = `${setting.mult.toFixed(2)}x`;
+          }
+        }
+      });
+
+      // Update General Settings
+      const autoJoinCheckbox = document.getElementById('settingsAutoJoinHost');
+      const antispamCheckbox = document.getElementById('antispam');
+      
+      if (autoJoinCheckbox) {
+        autoJoinCheckbox.checked = this.currentSettings.general.autoJoinHost;
+      }
+      if (antispamCheckbox) {
+        antispamCheckbox.checked = this.currentSettings.general.antispam;
+      }
+    },
+
+    initializeSliderEvents() {
+      // Bit Badge Slider Events - NUR UI Update, KEIN Speichern
+      const bitSliders = document.querySelectorAll('[data-bits-range]');
+      bitSliders.forEach(slider => {
+        slider.addEventListener('input', (e) => {
+          const value = parseFloat(e.target.value);
+          const output = e.target.parentElement.querySelector('o');
+          if (output) {
+            output.textContent = `${value.toFixed(2)}x`;
+          }
+
+          // Update NUR internal settings (NICHT auf Server speichern)
+          const minValue = parseInt(e.target.dataset.min);
+          const setting = this.currentSettings.luck.bits.find(b => b.min === minValue);
+          if (setting) {
+            setting.mult = value;
+          }
+          
+          console.log('ðŸŽ›ï¸ Slider updated (not saved):', minValue, 'bits â†’', value + 'x');
+        });
+      });
+
+      // Subscription Slider Events - NUR UI Update, KEIN Speichern
+      const subSliders = document.querySelectorAll('[data-subs-range]');
+      subSliders.forEach(slider => {
+        slider.addEventListener('input', (e) => {
+          const value = parseFloat(e.target.value);
+          const output = e.target.parentElement.querySelector('o');
+          if (output) {
+            output.textContent = `${value.toFixed(2)}x`;
+          }
+
+          // Update NUR internal settings (NICHT auf Server speichern)
+          const minValue = parseInt(e.target.dataset.min);
+          const setting = this.currentSettings.luck.subs.find(s => s.min === minValue);
+          if (setting) {
+            setting.mult = value;
+          }
+          
+          console.log('ðŸŽ›ï¸ Slider updated (not saved):', minValue, 'months â†’', value + 'x');
+        });
+      });
+
+      // General Settings Events - NUR UI Update, KEIN Speichern
+      const autoJoinCheckbox = document.getElementById('settingsAutoJoinHost');
+      const antispamCheckbox = document.getElementById('antispam');
+
+      if (autoJoinCheckbox) {
+        autoJoinCheckbox.addEventListener('change', (e) => {
+          this.currentSettings.general.autoJoinHost = e.target.checked;
+          console.log('âš™ï¸ Auto-join Host updated (not saved):', e.target.checked);
+        });
+      }
+
+      if (antispamCheckbox) {
+        antispamCheckbox.addEventListener('change', (e) => {
+          this.currentSettings.general.antispam = e.target.checked;
+          console.log('âš™ï¸ Anti-spam updated (not saved):', e.target.checked);
+        });
+      }
+
+      // Save Settings Button - HIER werden die Settings gespeichert
+      const saveButton = document.getElementById('saveSettings');
+      if (saveButton) {
+        saveButton.addEventListener('click', () => {
+          console.log('ðŸ’¾ Save Settings clicked - applying all changes...');
+          this.saveSettings();
+        });
+      }
+    },
+
+    async saveSettings() {
+      const saveButton = document.getElementById('saveSettings');
+      const saveText = saveButton?.querySelector('.save-text');
+      const saveIcon = saveButton?.querySelector('i');
+      
+      try {
+        // UI Feedback: Button wird zu "Saving..."
+        if (saveButton) {
+          saveButton.disabled = true;
+          saveButton.classList.add('loading');
+          if (saveText) saveText.textContent = 'Saving...';
+          if (saveIcon) saveIcon.setAttribute('data-lucide', 'loader-2');
+          lucide.createIcons(saveButton);
+        }
+        
+        console.log('ðŸ’¾ Saving all settings to server...', this.currentSettings);
+        
+        // Save Luck Settings
+        const luckResponse = await fetch('/api/settings/luck', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.currentSettings.luck)
+        });
+
+        // Save General Settings
+        const generalResponse = await fetch('/api/settings/general', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.currentSettings.general)
+        });
+
+        if (luckResponse.ok && generalResponse.ok) {
+          // UI Feedback: Erfolg
+          if (saveButton) {
+            saveButton.classList.remove('loading');
+            saveButton.classList.add('btn--success');
+            if (saveText) saveText.textContent = 'Saved!';
+            if (saveIcon) saveIcon.setAttribute('data-lucide', 'check');
+            lucide.createIcons(saveButton);
+          }
+          
+          UIManager.showToast('Settings saved and applied successfully!', 'success');
+          console.log('âœ… All settings saved and applied:', this.currentSettings);
+          
+          // Update AppState.settings fÃ¼r Auto-join Host
+          AppState.settings.autoJoinHost = this.currentSettings.general.autoJoinHost;
+          
+          // WICHTIG: Server wendet die Settings automatisch an alle Participants an
+          console.log('ðŸ”„ Server is now updating all participant luck multipliers...');
+          
+          // Button nach 2 Sekunden zurÃ¼cksetzen
+          setTimeout(() => {
+            if (saveButton) {
+              saveButton.disabled = false;
+              if (saveText) saveText.textContent = 'Save Settings';
+              if (saveIcon) saveIcon.setAttribute('data-lucide', 'save');
+              lucide.createIcons(saveButton);
+            }
+          }, 2000);
+          
+        } else {
+          throw new Error('Failed to save settings');
+        }
+      } catch (error) {
+        console.error('âŒ Failed to save settings:', error);
+        UIManager.showToast('Failed to save settings', 'error');
+        
+        // UI Feedback: Fehler
+        if (saveButton) {
+          saveButton.disabled = false;
+          saveButton.classList.remove('loading');
+          if (saveText) saveText.textContent = 'Save Settings';
+          if (saveIcon) saveIcon.setAttribute('data-lucide', 'save');
+          lucide.createIcons(saveButton);
+        }
+      }
+    },
+
     loadUISettings() {
       if (elements.keywordInput) elements.keywordInput.value = AppState.settings.keyword;
       if (elements.durationMode) elements.durationMode.value = AppState.settings.durationMode;
@@ -622,7 +717,8 @@ async function boot() {
       const isTimedMode = elements.durationMode?.value === 'timed';
       const duration = isTimedMode ? parseInt(elements.durationInput?.value || AppState.settings.duration) : 0;
       const subsOnly = AppState.settings.subsOnly;
-      const autoJoinHost = AppState.settings.autoJoinHost;
+      // Auto-join Host von aktuellen General Settings nehmen
+      const autoJoinHost = this.currentSettings.general.autoJoinHost;
       
       if (!Validators.keyword(keyword).valid) {
         throw new Error('Invalid keyword settings');
@@ -653,19 +749,25 @@ async function boot() {
     if (!dateString) return 'Unknown';
     
     const date = new Date(dateString);
-    const now = new Date();
-    const diffTime = Math.abs(now - date);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     
-    if (diffDays < 30) {
-      return `${diffDays} days ago`;
-    } else if (diffDays < 365) {
-      const months = Math.floor(diffDays / 30);
-      return `${months} month${months > 1 ? 's' : ''} ago`;
-    } else {
-      const years = Math.floor(diffDays / 365);
-      return `${years} year${years > 1 ? 's' : ''} ago`;
-    }
+    // Formatiere als "March 8th, 2021" wie in Nightbot
+    const options = { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    };
+    
+    const formatted = date.toLocaleDateString('en-US', options);
+    
+    // FÃ¼ge "th", "st", "nd", "rd" hinzu
+    const day = date.getDate();
+    let suffix = 'th';
+    
+    if (day === 1 || day === 21 || day === 31) suffix = 'st';
+    else if (day === 2 || day === 22) suffix = 'nd';  
+    else if (day === 3 || day === 23) suffix = 'rd';
+    
+    return formatted.replace(/(\d+)/, `$1${suffix}`);
   }
 
   function formatRelativeTime(dateString) {
@@ -691,7 +793,7 @@ async function boot() {
   const EventHandlers = {
     async startGiveaway() {
       if (AppState.ui.isStarting || AppState.giveaway.status === 'ACTIVE') {
-        console.log('🚫 Start already in progress or giveaway active');
+        console.log('ðŸš« Start already in progress or giveaway active');
         return;
       }
       
@@ -699,8 +801,8 @@ async function boot() {
       StateManager.updateButtonStates();
       
       try {
-                const settings = SettingsManager.getStartSettings();
-        console.log('🚀 Starting giveaway with settings:', settings);
+        const settings = SettingsManager.getStartSettings();
+        console.log('ðŸš€ Starting giveaway with settings:', settings);
         
         const res = await fetch('/api/giveaway/start', {
           method: 'POST',
@@ -721,7 +823,7 @@ async function boot() {
           throw new Error('Failed to start giveaway');
         }
       } catch (e) {
-        console.error('❌ Start failed:', e);
+        console.error('âŒ Start failed:', e);
         UIManager.showToast('Failed to start giveaway: ' + e.message, 'error');
       } finally {
         AppState.ui.isStarting = false;
@@ -741,11 +843,11 @@ async function boot() {
           endpoint = '/api/giveaway/resume';
           actionName = 'resume';
         } else {
-          console.log('🚫 Cannot pause/resume - giveaway not active');
+          console.log('ðŸš« Cannot pause/resume - giveaway not active');
           return;
         }
         
-        console.log(`🔄 Attempting to ${actionName} giveaway... Current status:`, AppState.giveaway.status);
+        console.log(`ðŸ”„ Attempting to ${actionName} giveaway... Current status:`, AppState.giveaway.status);
         const res = await fetch(endpoint, { 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
@@ -753,15 +855,15 @@ async function boot() {
         
         if (res.ok) {
           const data = await res.json();
-          console.log(`✅ ${actionName} request successful:`, data);
+          console.log(`âœ… ${actionName} request successful:`, data);
           UIManager.showToast(`Giveaway ${actionName}d successfully!`);
         } else {
           const errorData = await res.json().catch(() => ({}));
-          console.error(`❌ ${actionName} failed:`, res.status, errorData);
+          console.error(`âŒ ${actionName} failed:`, res.status, errorData);
           throw new Error(`Server responded with status ${res.status}: ${errorData.error || 'Unknown error'}`);
         }
       } catch (e) {
-        console.error(`❌ ${AppState.giveaway.status === 'ACTIVE' ? 'Pause' : 'Resume'} failed:`, e);
+        console.error(`âŒ ${AppState.giveaway.status === 'ACTIVE' ? 'Pause' : 'Resume'} failed:`, e);
         UIManager.showToast(`Failed to ${AppState.giveaway.status === 'ACTIVE' ? 'pause' : 'resume'} giveaway: ${e.message}`, 'error');
       }
     },
@@ -786,7 +888,7 @@ async function boot() {
           UIManager.showToast('No participants to pick from!', 'error');
         }
       } catch (e) {
-        console.error('❌ Pick winner failed:', e);
+        console.error('âŒ Pick winner failed:', e);
         UIManager.showToast('Failed to pick winner', 'error');
       } finally {
         AppState.ui.isPicking = false;
@@ -812,10 +914,10 @@ async function boot() {
         if (res.ok) {
           StateManager.updateStatus('INACTIVE');
           UIManager.showToast('Giveaway reset successfully');
-          console.log('✅ Giveaway reset completed');
+          console.log('âœ… Giveaway reset completed');
         }
       } catch (e) {
-        console.error('❌ Reset failed:', e);
+        console.error('âŒ Reset failed:', e);
         UIManager.showToast('Failed to reset giveaway', 'error');
       } finally {
         AppState.ui.isResetting = false;
@@ -824,7 +926,7 @@ async function boot() {
     
     cancelReset() {
       UIManager.hideResetConfirmation();
-      console.log('❌ Reset cancelled');
+      console.log('âŒ Reset cancelled');
     }
   };
 
@@ -844,87 +946,62 @@ async function boot() {
     const modal = document.getElementById('winnerModal');
     const winnerName = document.getElementById('winnerName');
     const winnerAvatar = document.getElementById('winnerAvatar');
+    const winnerAvatarFallback = document.getElementById('winnerAvatarFallback');
     const winnerLuck = document.getElementById('winnerLuck');
     const winnerUserInfo = document.getElementById('winnerUserInfo');
-    const winnerMessages = document.getElementById('winnerMessages');
     
-    if (!modal || !winnerName || !winnerAvatar || !winnerLuck) return;
+    if (!modal || !winnerName) return;
 
     winnerName.textContent = winner.displayName || winner.login;
     
     // Profilbild setzen - mit Fallback
-    if (winner.profileImageUrl) {
+    if (winner.profileImageUrl && winnerAvatar) {
       winnerAvatar.src = winner.profileImageUrl;
       winnerAvatar.style.display = 'block';
-      console.log('🖼️ Setting winner avatar:', winner.profileImageUrl);
+      if (winnerAvatarFallback) winnerAvatarFallback.style.display = 'none';
+      console.log('ðŸ–¼ï¸ Setting winner avatar:', winner.profileImageUrl);
+      
+      // Error handler fÃ¼r Bild-Ladefehler
+      winnerAvatar.onerror = () => {
+        console.log('âŒ Failed to load winner avatar, using fallback');
+        winnerAvatar.style.display = 'none';
+        if (winnerAvatarFallback) {
+          winnerAvatarFallback.style.display = 'flex';
+          winnerAvatarFallback.textContent = (winner.displayName || winner.login).charAt(0).toUpperCase();
+        }
+      };
     } else {
       // Fallback: Ersten Buchstaben anzeigen
-      winnerAvatar.style.display = 'none';
-      console.log('⚠️ No profile image for winner, using fallback');
+      if (winnerAvatar) winnerAvatar.style.display = 'none';
+      if (winnerAvatarFallback) {
+        winnerAvatarFallback.style.display = 'flex';
+        winnerAvatarFallback.textContent = (winner.displayName || winner.login).charAt(0).toUpperCase();
+      }
+      console.log('âš ï¸ No profile image for winner, using fallback');
     }
-    winnerAvatar.alt = (winner.displayName || winner.login) + ' avatar';
     
-    if (winner.luck && winner.luck > 1) {
-      winnerLuck.textContent = `${winner.luck.toFixed(2)}x Luck`;
-      winnerLuck.style.display = 'block';
-    } else {
-      winnerLuck.style.display = 'none';
+    if (winnerLuck) {
+      if (winner.luck && winner.luck > 1) {
+        winnerLuck.textContent = `${winner.luck.toFixed(2)}x Luck`;
+        winnerLuck.style.display = 'block';
+      } else {
+        winnerLuck.style.display = 'none';
+      }
     }
 
-    // Load and display user info
-    if (winner.userId && winnerUserInfo) {
-      winnerUserInfo.style.display = 'block';
-      
+    // Load and display user info - NUR Account Created
+    if (winner.userId) {
       try {
         const userInfo = await loadUserInfo(winner.userId, winner.login);
         
         if (userInfo) {
           const createdAtEl = document.getElementById('winnerCreatedAt');
-          const followedAtEl = document.getElementById('winnerFollowedAt');
-          const followInfoItem = document.getElementById('followInfoItem');
-          const subInfoItem = document.getElementById('subInfoItem');
-          const winnerSubInfo = document.getElementById('winnerSubInfo');
           
           if (createdAtEl) {
             if (userInfo.createdAt) {
               createdAtEl.textContent = formatDate(userInfo.createdAt);
             } else {
               createdAtEl.textContent = 'Unknown';
-            }
-          }
-          
-          if (followInfoItem && followedAtEl) {
-            if (userInfo.isFollowing && userInfo.followedAt) {
-              followInfoItem.style.display = 'flex';
-              followedAtEl.textContent = formatDate(userInfo.followedAt);
-            } else {
-              followInfoItem.style.display = 'none';
-            }
-          }
-          
-          // Check if user is subscriber from badges
-          const isSubscriber = winner.badges && winner.badges.some(badge => 
-            badge.name === 'subscriber' || badge.name === 'founder'
-          );
-          
-          if (subInfoItem && winnerSubInfo) {
-            if (isSubscriber) {
-              subInfoItem.style.display = 'flex';
-              
-              // Try to get sub months from badge info
-              const subBadge = winner.badges.find(badge => badge.name === 'subscriber');
-              if (subBadge && subBadge.version) {
-                const months = parseInt(subBadge.version);
-                if (!isNaN(months)) {
-                  winnerSubInfo.textContent = `${months} month${months !== 1 ? 's' : ''}`;
-                } else {
-                  winnerSubInfo.textContent = 'Yes';
-                }
-              } else {
-                winnerSubInfo.textContent = 'Yes';
-              }
-            } else {
-              subInfoItem.style.display = 'none';
             }
           }
         } else {
@@ -943,70 +1020,13 @@ async function boot() {
       }
     }
 
-    // Show messages section
-    if (winnerMessages) {
-      winnerMessages.style.display = 'block';
-      updateWinnerMessages();
-    }
-
     modal.classList.add('modal--show');
     createConfetti();
     
-    console.log('🏆 Winner modal opened for:', winner.displayName || winner.login);
+    console.log('ðŸ† Winner modal opened for:', winner.displayName || winner.login);
+    console.log('ðŸŽŠ Modal stays open PERMANENTLY until Close button is clicked');
     
-    setTimeout(() => {
-      if (modal.classList.contains('modal--show')) {
-        modal.classList.remove('modal--show');
-        console.log('Winner modal auto-closed');
-        AppState.winner.currentWinner = null;
-      }
-    }, 15000);
-  }
-
-  function updateWinnerMessages() {
-    const messagesList = document.getElementById('winnerMessagesList');
-    if (!messagesList) return;
-    
-    if (AppState.winner.messagesAfterWin.length === 0) {
-      messagesList.innerHTML = '<p class="no-messages">No messages yet...</p>';
-    } else {
-      messagesList.innerHTML = AppState.winner.messagesAfterWin
-        .slice(-5) // Show last 5 messages
-        .map(msg => {
-          const timeElapsed = getTimeElapsed(AppState.winner.winTime, msg.timestamp);
-          return `
-            <div class="winner-message">
-              <div class="timestamp">+${timeElapsed}</div>
-              <div class="text">${escapeHtml(msg.text)}</div>
-            </div>
-          `;
-        }).join('');
-    }
-    
-    // Auto scroll to bottom
-    messagesList.scrollTop = messagesList.scrollHeight;
-  }
-
-  function getTimeElapsed(winTime, messageTime) {
-    if (!winTime || !messageTime) return '0s';
-    
-    const winDate = new Date(winTime);
-    const msgDate = new Date(messageTime);
-    const diffMs = msgDate - winDate;
-    
-    if (diffMs < 0) return '0s';
-    
-    const seconds = Math.floor(diffMs / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    
-    if (hours > 0) {
-      return `${hours}h ${minutes % 60}m`;
-    } else if (minutes > 0) {
-      return `${minutes}m ${seconds % 60}s`;
-    } else {
-      return `${seconds}s`;
-    }
+    // ABSOLUT KEIN Auto-Close Timer - Modal bleibt fÃ¼r immer offen!
   }
 
   // Statuspoint helper
@@ -1025,20 +1045,36 @@ async function boot() {
   socket.on('disconnect', () => setStatus('err'));
   socket.on('connect_error', () => setStatus('err'));
   
+  // Listen for settings updates from server
+  socket.on('settings:luck_updated', (newLuckSettings) => {
+    console.log('ðŸŽ¯ Received updated luck settings:', newLuckSettings);
+    SettingsManager.currentSettings.luck = newLuckSettings;
+    SettingsManager.updateSettingsUI();
+  });
+  
+  socket.on('settings:general_updated', (newGeneralSettings) => {
+    console.log('âš™ï¸ Received updated general settings:', newGeneralSettings);
+    SettingsManager.currentSettings.general = newGeneralSettings;
+    AppState.settings.autoJoinHost = newGeneralSettings.autoJoinHost;
+    SettingsManager.updateSettingsUI();
+  });
+  
   socket.on('giveaway:status', (status) => {
-    console.log('📡 Received giveaway status:', status);
+    console.log('ðŸ“¡ Received giveaway status:', status);
     
     const oldStatus = AppState.giveaway.status;
     
     if (status.state) {
       const newStatus = status.state === 'collect' ? 'ACTIVE' : 
                        status.state === 'locked' ? 'PAUSED' : 'INACTIVE';
-      console.log('🔄 Status update from server:', status.state, '→', newStatus, 'Old:', oldStatus);
+      console.log('ðŸ”„ Status update from server:', status.state, 'â†’', newStatus, 'Old:', oldStatus);
       
+      // Status immer aktualisieren
       AppState.giveaway.status = newStatus;
       StateManager.updateStatusDisplay();
       StateManager.updateButtonStates();
       StateManager.updateDurationDisplay();
+      StateManager.updateParticipantsHeader(); // NEU: Header aktualisieren
     }
     
     if (status.keyword) {
@@ -1046,8 +1082,9 @@ async function boot() {
       StateManager.updateKeywordDisplay();
     }
     
+    // Timer NUR bei echtem Start (mit duration) neu starten
     if (status.duration !== undefined && oldStatus === 'INACTIVE') {
-      console.log('⏰ Starting new timer with duration:', status.duration);
+      console.log('â° Starting new timer with duration:', status.duration);
       if (status.duration > 0) {
         AppState.giveaway.isTimedMode = true;
         TimerManager.start(status.duration);
@@ -1057,17 +1094,27 @@ async function boot() {
       }
     }
     
+    // Bei Resume ohne duration wird Timer einfach fortgesetzt
     if (oldStatus === 'PAUSED' && newStatus === 'ACTIVE' && !status.duration) {
-      console.log('▶️ Resume - Timer continues from:', TimerManager.formatTime(AppState.giveaway.timeRemaining));
+      console.log('â–¶ï¸ Resume - Timer continues from:', TimerManager.formatTime(AppState.giveaway.timeRemaining));
     }
   });
   
   socket.on('participant:add', (p) => {
+    console.log('âž• Participant added:', p);
     AppState.giveaway.entries++;
     StateManager.updateEntriesDisplay();
     StateManager.updateButtonStates();
     
     if (!elements.participantsList) return;
+    
+    // PrÃ¼fen ob Participant bereits existiert (bei Refresh)
+    const existingParticipant = elements.participantsList.querySelector(`[data-remove="${p.login}"]`);
+    if (existingParticipant) {
+      console.log('ðŸ”„ Participant already exists, skipping:', p.login);
+      return;
+    }
+    
     elements.participantsList.appendChild(renderParticipant(p));
     updateParticipantCount();
     checkScrollbar();
@@ -1103,25 +1150,45 @@ async function boot() {
   });
 
   socket.on('participant:update', (participant) => {
-    console.log('🔄 Participant updated:', participant);
+    console.log('ðŸ”„ Participant updated:', participant.login, 'New luck:', participant.luck);
     
     // Find and update the participant in the list
-    const participantItem = elements.participantsList?.querySelector(`[data-remove="${participant.login}"]`)?.closest('li');
-    if (participantItem && participant.profileImageUrl) {
-      const avatarImg = participantItem.querySelector('.participant-avatar');
-      const fallbackDiv = participantItem.querySelector('.participant-avatar-fallback');
+    const participantItem = elements.participantsList?.querySelector(`[data-login="${participant.login}"]`);
+    if (participantItem) {
+      // Update profile image if available
+      if (participant.profileImageUrl) {
+        const avatarImg = participantItem.querySelector('.participant-avatar');
+        const fallbackDiv = participantItem.querySelector('.participant-avatar-fallback');
+        
+        if (avatarImg && fallbackDiv) {
+          avatarImg.src = participant.profileImageUrl;
+          avatarImg.style.display = 'block';
+          fallbackDiv.style.display = 'none';
+          
+          avatarImg.onerror = () => {
+            avatarImg.style.display = 'none';
+            fallbackDiv.style.display = 'flex';
+          };
+        }
+      }
       
-      if (avatarImg && fallbackDiv) {
-        avatarImg.src = participant.profileImageUrl;
-        avatarImg.style.display = 'block';
-        fallbackDiv.style.display = 'none';
+      // Update luck multiplier display
+      const luckDisplay = participantItem.querySelector('.participant-luck');
+      if (luckDisplay && participant.luck) {
+        const multiplierText = participant.luck > 1 ? `${participant.luck.toFixed(2)}x Luck` : 'No Multiplier';
+        luckDisplay.textContent = multiplierText;
         
-        avatarImg.onerror = () => {
-          avatarImg.style.display = 'none';
-          fallbackDiv.style.display = 'flex';
-        };
+        // Add update animation
+        luckDisplay.style.transition = 'all 0.3s ease';
+        luckDisplay.style.transform = 'scale(1.1)';
+        luckDisplay.style.color = 'var(--success)';
         
-        console.log('🖼️ Updated participant avatar for:', participant.login);
+        setTimeout(() => {
+          luckDisplay.style.transform = 'scale(1)';
+          luckDisplay.style.color = 'var(--accent)';
+        }, 300);
+        
+        console.log(`âœ… Updated luck display for ${participant.login}: ${multiplierText}`);
       }
     }
   });
@@ -1202,6 +1269,8 @@ async function boot() {
 
   // Initialize Settings and State
   SettingsManager.loadUISettings();
+  await SettingsManager.loadSettings(); // Load server settings
+  SettingsManager.initializeSliderEvents(); // Initialize slider events
   StateManager.updateStatus('INACTIVE');
   StateManager.updateEntriesDisplay();
 
@@ -1276,16 +1345,46 @@ async function boot() {
       const confetti = document.createElement('div');
       confetti.className = 'confetti';
       confetti.style.left = Math.random() * 100 + '%';
+      confetti.style.top = '-10px'; // âœ… Startet auÃŸerhalb des sichtbaren Bereichs
       confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
       confetti.style.animationDelay = Math.random() * 3 + 's';
       confetti.style.animationDuration = (Math.random() * 3 + 2) + 's';
       container.appendChild(confetti);
     }
+    
+    // Konfetti smooth beenden nach 5 Sekunden - kein neues Konfetti mehr
+    setTimeout(() => {
+      console.log('ðŸŽŠ Stopping new confetti creation');
+      // Bestehende Konfetti-Elemente natÃ¼rlich zu Ende fallen lassen
+      // Aber keine neuen mehr hinzufÃ¼gen
+      const confettiElements = container.querySelectorAll('.confetti');
+      confettiElements.forEach(element => {
+        // Animation-iteration-count auf 1 setzen falls noch nicht gesetzt
+        element.style.animationIterationCount = '1';
+      });
+      
+      // Nach weiteren 5 Sekunden alle restlichen Konfetti entfernen
+      setTimeout(() => {
+        console.log('ðŸŽŠ Clearing remaining confetti');
+        container.innerHTML = '';
+      }, 5000);
+    }, 5000);
   }
 
   document.getElementById('closeWinnerModal')?.addEventListener('click', () => {
-    document.getElementById('winnerModal')?.classList.remove('modal--show');
-    AppState.winner.currentWinner = null;
+    const modal = document.getElementById('winnerModal');
+    if (modal) {
+      modal.classList.remove('modal--show');
+      console.log('ðŸŽŠ Winner modal manually closed by user');
+      
+      // Konfetti beim SchlieÃŸen aufrÃ¤umen
+      const confettiContainer = document.getElementById('confettiContainer');
+      if (confettiContainer) {
+        confettiContainer.innerHTML = '';
+      }
+      
+      AppState.winner.currentWinner = null;
+    }
   });
 
   function clearParticipantsList() {
@@ -1301,7 +1400,7 @@ async function boot() {
       
       setTimeout(() => {
         StateManager.updateEntriesDisplay();
-        console.log('🗨️ Participants list cleared with animation');
+        console.log('ðŸ—¨ï¸ Participants list cleared with animation');
       }, participants.length * 50 + 200);
     }
   }
@@ -1340,14 +1439,15 @@ async function boot() {
   }
 
   function renderParticipant(p) {
-    console.log('Rendering participant with full data:', p);
+    console.log('ðŸŽ¨ Rendering participant:', p.login, 'Luck:', p.luck);
     const login = p.login || p.name || p.user || '';
     const display = p.displayName || p.display || login;
     const avatar = p.profileImageUrl || p.avatar || p.avatarUrl || '';
     const luck = p.luck || p.mult || 1;
     const badges = renderBadges(p.badges);
     
-    const multiplierText = `${luck.toFixed(2)}x Luck`;
+    // Format luck multiplier properly
+    const multiplierText = luck > 1 ? `${luck.toFixed(2)}x Luck` : 'No Multiplier';
     
     // Avatar HTML mit Fallback
     let avatarHtml;
@@ -1364,7 +1464,7 @@ async function boot() {
     }
     
     const li = el(`
-      <li class="row participant-row" style="opacity: 0; transform: translateY(10px);">
+      <li class="row participant-row" data-login="${login}" style="opacity: 0; transform: translateY(10px);">
         <div class="who">
           <div class="avatar">
             ${avatarHtml}
@@ -1378,7 +1478,7 @@ async function boot() {
           </div>
         </div>
         <div class="acts">
-          <button data-remove="${login}" title="Remove">
+          <button data-remove="${login}" title="Remove" class="remove-participant-btn">
             <i data-lucide="x"></i>
           </button>
         </div>
@@ -1393,18 +1493,43 @@ async function boot() {
       li.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
     }, 10);
     
-    li.querySelector('[data-remove]')?.addEventListener('click', async (e) => {
-      const lg = e.currentTarget.dataset.remove;
-      const res = await fetch(`/api/giveaway/participants/${encodeURIComponent(lg)}`, { method: 'DELETE' });
-      if (res.ok) {
-        li.style.opacity = '0';
-        li.style.transform = 'translateX(-20px)';
-        setTimeout(() => {
-          li.remove();
-          updateParticipantCount();
-        }, 200);
-      }
-    });
+    // Event Listener fÃ¼r Remove Button
+    const removeBtn = li.querySelector('.remove-participant-btn');
+    if (removeBtn) {
+      removeBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const lg = removeBtn.dataset.remove;
+        console.log('ðŸ—‘ï¸ Attempting to remove participant:', lg);
+        
+        try {
+          const res = await fetch(`/api/giveaway/participants/${encodeURIComponent(lg)}`, { 
+            method: 'DELETE',
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (res.ok) {
+            console.log('âœ… Participant removed successfully:', lg);
+            li.style.opacity = '0';
+            li.style.transform = 'translateX(-20px)';
+            setTimeout(() => {
+              li.remove();
+              updateParticipantCount();
+            }, 200);
+          } else {
+            const errorData = await res.json().catch(() => ({}));
+            console.error('âŒ Failed to remove participant:', res.status, errorData);
+            UIManager.showToast(`Failed to remove ${lg}`, 'error');
+          }
+        } catch (error) {
+          console.error('âŒ Error removing participant:', error);
+          UIManager.showToast(`Error removing ${lg}`, 'error');
+        }
+      });
+    }
     
     return li;
   }
@@ -1412,14 +1537,17 @@ async function boot() {
   function updateParticipantCount() {
     const allParticipants = elements.participantsList ? elements.participantsList.children.length : 0;
     
+    console.log('ðŸ‘¥ Updating participant count:', allParticipants);
     AppState.giveaway.entries = allParticipants;
     StateManager.updateEntriesDisplay();
     
     if (elements.emptyPanel && elements.participantsList) {
       if (allParticipants === 0) {
+        console.log('ðŸ“„ Showing empty panel');
         elements.emptyPanel.style.display = 'flex';
         elements.participantsList.style.display = 'none';
       } else {
+        console.log('ðŸ“„ Hiding empty panel, showing participants');
         elements.emptyPanel.style.display = 'none';
         elements.participantsList.style.display = 'flex';
         checkScrollbar();
@@ -1468,20 +1596,11 @@ async function boot() {
   socket.on('chat', (ev) => {
     if (!elements.chatList) return;
     
-    // Track messages after win
-    if (AppState.winner.currentWinner && ev.userId === AppState.winner.currentWinner.userId) {
-      AppState.winner.messagesAfterWin.push({
-        text: ev.text || ev.message || '',
-        timestamp: ev.timestamp || new Date().toISOString()
-      });
-      updateWinnerMessages();
-    }
-    
     const msg = (ev?.message ?? ev?.text ?? '').toString();
     const name = ev?.user || 'User';
     const color = ev?.color || '#a2a2ad';
     const badges = renderBadges(ev.badges || []);
-    const multiplierText = ev.luck && ev.luck > 1 ? `${ev.luck.toFixed(2)}x` : '';
+    const multiplierText = (ev.luck && ev.luck > 1) ? `${ev.luck.toFixed(2)}x` : '';
     const isParticipant = ev.isParticipant || false;
     
     const empty = elements.chatList.querySelector('.empty');
@@ -1558,8 +1677,19 @@ async function boot() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      document.getElementById('winnerModal')?.classList.remove('modal--show');
-      AppState.winner.currentWinner = null;
+      const modal = document.getElementById('winnerModal');
+      if (modal && modal.classList.contains('modal--show')) {
+        modal.classList.remove('modal--show');
+        console.log('ðŸŽŠ Winner modal closed by ESC key');
+        
+        // Konfetti beim SchlieÃŸen aufrÃ¤umen
+        const confettiContainer = document.getElementById('confettiContainer');
+        if (confettiContainer) {
+          confettiContainer.innerHTML = '';
+        }
+        
+        AppState.winner.currentWinner = null;
+      }
       UIManager.hideResetConfirmation();
     }
     
@@ -1573,7 +1703,7 @@ async function boot() {
     }
   });
 
-  console.log('🚀 Enhanced ZinxyBot Dashboard fully initialized!');
+  console.log('ðŸš€ Enhanced ZinxyBot Dashboard fully initialized!');
 }
 
 function escapeHtml(s) {
