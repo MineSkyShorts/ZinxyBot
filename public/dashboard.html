@@ -1,11 +1,14 @@
 <!doctype html>
-<!-- DATEI: dashboard.html - KORRIGIERT fÃ¼r besseres State Management -->
 <html lang="de">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ZinxyBot Dashboard - Enhanced</title>
-  <link rel="icon" href="assets/favicon.svg">
+  
+  <!-- Favicon aus brand.png -->
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
+  <link rel="apple-touch-icon" href="/assets/brand.png">
+  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -23,11 +26,11 @@
     <nav class="tabs" role="tablist" aria-label="Primary">
       <button class="tab is-active" data-tab="giveaways" role="tab" aria-selected="true">
         <i data-lucide="gift"></i>
-        Giveaways
+        <span class="tab-text">Giveaways</span>
       </button>
       <button class="tab" data-tab="settings" role="tab" aria-selected="false">
         <i data-lucide="settings"></i>
-        Settings
+        <span class="tab-text">Settings</span>
       </button>
     </nav>
     <div class="user">
@@ -58,7 +61,6 @@
             <span>Keyword:</span>
             <code id="kw" aria-label="Current keyword">!join</code>
           </li>
-          <!-- NEU: Duration row wird nur bei timed mode angezeigt -->
           <li style="display: none;">
             <span>Duration:</span>
             <span id="dur" aria-live="polite" aria-label="Time remaining">00:00</span>
@@ -162,7 +164,6 @@
           Participants
           <span class="participant-count" id="participantCount" 
                 aria-live="polite" aria-label="Participant count">0</span>
-          <!-- Keyword hint wird dynamisch hier eingefÃ¼gt -->
         </h3>
         <div class="search-field">
           <input type="text" id="participantSearch" 
@@ -211,7 +212,7 @@
     </aside>
   </main>
 
-  <!-- Settings view -->
+  <!-- Settings view mit korrigierter Scrollbar -->
   <main id="settings" class="view" aria-labelledby="settings-heading">
     <section class="settings-wrap">
       <h1 id="settings-heading">
@@ -343,7 +344,7 @@
     <div class="modal-content">
       <div class="confetti-container" id="confettiContainer" aria-hidden="true"></div>
       <div class="winner-content">
-        <h2 id="winner-title">ðŸŽ‰ Winner Selected! ðŸŽ‰</h2>
+        <h2 id="winner-title">🎉 Winner Selected! 🎉</h2>
         
         <!-- Winner Info with Account Created integrated -->
         <div class="winner-info-container">
@@ -358,7 +359,6 @@
             </div>
           </div>
           
-          <!-- Account Created direkt integriert -->
           <div class="winner-account-info">
             <div class="account-created-item">
               <span class="info-label">Account created on</span>
@@ -366,8 +366,6 @@
             </div>
           </div>
         </div>
-        
-        <!-- Additional User Info Section - ENTFERNT -->
         
         <button id="closeWinnerModal" class="btn btn--primary" aria-label="Close winner announcement">
           <i data-lucide="x" aria-hidden="true"></i>
@@ -377,7 +375,7 @@
     </div>
   </div>
 
-  <!-- NEU: Reset Confirmation Toast (statt Slider) -->
+  <!-- Reset Confirmation Toast -->
   <div id="resetConfirmToast" class="reset-confirm-toast" role="dialog" aria-labelledby="reset-title" aria-hidden="true">
     <div class="reset-confirm-content">
       <div class="reset-confirm-icon" aria-hidden="true">
@@ -406,18 +404,18 @@
   <!-- Enhanced Toast Container -->
   <div id="toastContainer" class="toast-container" aria-live="polite" aria-label="Notifications"></div>
 
-  <!-- Screen reader only elements fÃ¼r bessere Accessibility -->
+  <!-- Screen reader only elements für bessere Accessibility -->
   <div class="sr-only">
     <div id="status-announcements" aria-live="assertive" aria-atomic="true"></div>
     <div id="error-announcements" aria-live="assertive" aria-atomic="true"></div>
   </div>
 
-  <footer class="footer">Â© 2025 zinxybot.net - All rights reserved.</footer>
+  <footer class="footer">© 2025 zinxybot.net - All rights reserved.</footer>
   
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
 
-  <!-- Utility Styles fÃ¼r bessere Accessibility -->
+  <!-- Utility Styles für bessere Accessibility -->
   <style>
     /* Screen reader only utility class */
     .sr-only {
