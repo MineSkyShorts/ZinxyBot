@@ -1,4 +1,4 @@
-/* DATEI: styles.css - VOLLSTÄNDIG KORRIGIERT für besseres State Management */
+/* DATEI: styles.css - VOLLSTÃ„NDIG KORRIGIERT fÃ¼r besseres State Management */
 
 :root{
   --bg:#0f1117;
@@ -17,7 +17,7 @@
   --radius-sm:12px;
   --border:1px solid rgba(255,255,255,.06);
   
-  /* Enhanced state colors für bessere visuelle Unterscheidung */
+  /* Enhanced state colors fÃ¼r bessere visuelle Unterscheidung */
   --state-active:#22c55e;
   --state-paused:#f59e0b;
   --state-inactive:#6b7280;
@@ -163,7 +163,7 @@ body{
   box-shadow:0 4px 12px rgba(0,0,0,.15);
 }
 
-/* Orange Button für Pause State */
+/* Orange Button fÃ¼r Pause State */
 .btn--orange {
   background:linear-gradient(135deg, var(--orange), #ea580c);
   box-shadow:0 6px 18px rgba(249,115,22,.25);
@@ -827,7 +827,7 @@ h3{font-size:16px;color:#d9d9df}
   overflow:hidden;
 }
 
-/* Chat - KORRIGIERT für besseren Text-Umbruch */
+/* Chat - KORRIGIERT fÃ¼r besseren Text-Umbruch */
 .chat{
   flex:1;
   background:var(--bg-soft);border:var(--border);
@@ -835,7 +835,7 @@ h3{font-size:16px;color:#d9d9df}
   min-height:0;
   scrollbar-width:thin;
   scrollbar-color:var(--accent) var(--bg-soft);
-  /* NEU: Wichtig für Text-Umbruch */
+  /* NEU: Wichtig fÃ¼r Text-Umbruch */
   word-wrap:break-word;
   overflow-wrap:break-word;
 }
@@ -870,7 +870,7 @@ h3{font-size:16px;color:#d9d9df}
   display:flex;
   align-items:flex-start;
   gap:8px;
-  /* NEU: Wichtig für Container-Respekt */
+  /* NEU: Wichtig fÃ¼r Container-Respekt */
   max-width:100%;
   overflow:hidden;
 }
@@ -884,11 +884,11 @@ h3{font-size:16px;color:#d9d9df}
 
 .msg-content{
   display:flex;
-  align-items:flex-start; /* Geändert von center zu flex-start */
+  align-items:flex-start; /* GeÃ¤ndert von center zu flex-start */
   gap:6px;
   flex-wrap:wrap;
   line-height:1.4;
-  /* NEU: Wichtig für Text-Umbruch */
+  /* NEU: Wichtig fÃ¼r Text-Umbruch */
   min-width:0;
   flex:1;
   word-wrap:break-word;
@@ -905,14 +905,14 @@ h3{font-size:16px;color:#d9d9df}
 }
 
 .msg-text{
-  /* NEU: Kritisch für Text-Umbruch */
+  /* NEU: Kritisch fÃ¼r Text-Umbruch */
   word-wrap:break-word;
   overflow-wrap:break-word;
   word-break:break-word;
   hyphens:auto;
   min-width:0;
   flex:1;
-  /* NEU: Für sehr lange Wörter/URLs */
+  /* NEU: FÃ¼r sehr lange WÃ¶rter/URLs */
   white-space:pre-wrap;
   max-width:100%;
 }
@@ -921,7 +921,7 @@ h3{font-size:16px;color:#d9d9df}
   font-weight:700;
   white-space:nowrap;
   flex-shrink:0;
-  /* NEU: Maximale Breite für Usernames */
+  /* NEU: Maximale Breite fÃ¼r Usernames */
   max-width:120px;
   overflow:hidden;
   text-overflow:ellipsis;
@@ -941,6 +941,20 @@ h3{font-size:16px;color:#d9d9df}
   height:100%;
   border-radius:50%;
   object-fit:cover;
+}
+
+.participant-avatar-fallback{
+  width:100%;
+  height:100%;
+  border-radius:50%;
+  background:linear-gradient(135deg, var(--accent), var(--accent-2));
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:white;
+  font-weight:600;
+  font-size:14px;
+  text-transform:uppercase;
 }
 
 .chat-badge{
@@ -971,14 +985,14 @@ h3{font-size:16px;color:#d9d9df}
   flex-shrink:0;
 }
 
-/* Chat Emote Styling - NEU: Verbessert für bessere Integration */
+/* Chat Emote Styling - NEU: Verbessert fÃ¼r bessere Integration */
 .chat-emote{
   height:20px;
   width:auto;
   vertical-align:middle;
   margin:0 2px;
   border-radius:2px;
-  /* NEU: Verhindert dass Emotes den Text-Flow stören */
+  /* NEU: Verhindert dass Emotes den Text-Flow stÃ¶ren */
   display:inline-block;
   flex-shrink:0;
 }
@@ -1000,7 +1014,7 @@ h3{font-size:16px;color:#d9d9df}
   flex:1;background:var(--bg-soft);border:var(--border);
   border-radius:10px;color:var(--text);padding:10px 12px;
   font-family:inherit;
-  /* NEU: Auch für Input bessere Behandlung */
+  /* NEU: Auch fÃ¼r Input bessere Behandlung */
   word-wrap:break-word;
   overflow-wrap:break-word;
 }
@@ -1025,7 +1039,7 @@ h3{font-size:16px;color:#d9d9df}
   flex-direction:column;
   gap:16px;
   flex:1;
-  overflow-y:hidden;
+  overflow-y:auto;
   padding-right:4px;
   height:auto;
   min-height:auto;
@@ -1176,6 +1190,21 @@ h3{font-size:16px;color:#d9d9df}
   padding-top:8px;
 }
 
+/* Save Button Loading State */
+.btn.loading {
+  opacity:0.8;
+  pointer-events:none;
+}
+
+.btn.loading i {
+  animation:spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .btn--disabled{
   opacity:0.6;
   pointer-events:none;
@@ -1231,14 +1260,13 @@ h3{font-size:16px;color:#d9d9df}
   padding:32px;
   box-shadow:0 20px 60px rgba(0,0,0,.5);
   text-align:center;
-  max-width:650px; /* Erhöht von 600px */
-  max-height:85vh; /* Reduziert von 90vh für bessere Nutzung */
+  max-width:650px;
+  max-height:85vh;
   width:90%;
   z-index:1001;
   transform:scale(.9);
   transition:transform .3s ease;
   overflow-y:auto;
-  /* NEU: Entfernt pinke Outline */
   outline:none;
   border:1px solid rgba(255,255,255,.1);
 }
@@ -1280,7 +1308,7 @@ h3{font-size:16px;color:#d9d9df}
   text-shadow:0 0 20px rgba(169,112,255,.3);
 }
 
-/* NEU: Winner Info Container Layout */
+/* Winner Info Container Layout */
 .winner-info-container{
   margin:24px 0;
   padding:20px;
@@ -1351,9 +1379,8 @@ h3{font-size:16px;color:#d9d9df}
   font-weight:600;
 }
 
-/* NEU: Account Created direkt integriert */
+/* Account Created direkt integriert */
 .winner-account-info{
-  border-top:1px solid rgba(255,255,255,.1);
   padding-top:16px;
 }
 
@@ -1375,135 +1402,7 @@ h3{font-size:16px;color:#d9d9df}
   color:var(--text);
 }
 
-/* NEU: Winner User Info Styling */
-.winner-user-info{
-  margin:20px 0;
-  padding:16px;
-  background:rgba(169,112,255,.1);
-  border:1px solid rgba(169,112,255,.2);
-  border-radius:12px;
-  text-align:left;
-}
-
-.user-info-grid{
-  display:grid;
-  gap:12px;
-}
-
-.info-item{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:8px 12px;
-  background:var(--bg-soft);
-  border-radius:8px;
-  border:var(--border);
-}
-
-.info-label{
-  font-weight:600;
-  color:var(--muted);
-  font-size:13px;
-}
-
-.info-value{
-  font-weight:700;
-  color:var(--text);
-  font-size:13px;
-}
-
-/* NEU: Winner Messages Styling */
-.winner-messages{
-  margin:20px 0;
-  text-align:left;
-}
-
-.winner-messages h4{
-  margin:0 0 12px;
-  font-size:16px;
-  font-weight:600;
-  color:var(--text);
-  display:flex;
-  align-items:center;
-  gap:8px;
-}
-
-.messages-list{
-  max-height:180px; /* Erhöht von 150px */
-  overflow-y:auto;
-  background:var(--bg-soft);
-  border:var(--border);
-  border-radius:8px;
-  padding:12px;
-  /* NEU: Auch hier Text-Umbruch für Messages */
-  word-wrap:break-word;
-  overflow-wrap:break-word;
-  /* NEU: Verbesserte Scrollbar */
-  scrollbar-width:thin;
-  scrollbar-color:var(--accent) var(--bg-soft);
-}
-
-.messages-list::-webkit-scrollbar{
-  width:6px;
-  background:transparent;
-}
-
-.messages-list::-webkit-scrollbar-track{
-  background:var(--bg-soft);
-  border-radius:3px;
-  margin:4px 0;
-}
-
-.messages-list::-webkit-scrollbar-thumb{
-  background:var(--accent);
-  border-radius:3px;
-  transition:background .2s ease;
-}
-
-.messages-list::-webkit-scrollbar-thumb:hover{
-  background:var(--accent-2);
-}
-
-.winner-message{
-  margin:8px 0;
-  padding:10px; /* Erhöht von 8px */
-  background:rgba(255,255,255,.05);
-  border-radius:6px;
-  font-size:13px;
-  line-height:1.4;
-  /* NEU: Für Message Text */
-  word-wrap:break-word;
-  overflow-wrap:break-word;
-  word-break:break-word;
-  border-left:3px solid var(--accent);
-}
-
-.winner-message .timestamp{
-  color:var(--accent); /* Geändert von var(--muted) */
-  font-size:11px;
-  margin-bottom:4px;
-  font-weight:600; /* NEU: Macht Zeit prominenter */
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-}
-
-.winner-message .text{
-  color:var(--text);
-  /* NEU: Kritisch für lange Nachrichten */
-  word-wrap:break-word;
-  overflow-wrap:break-word;
-  word-break:break-word;
-  white-space:pre-wrap;
-}
-
-.no-messages{
-  color:var(--muted);
-  font-style:italic;
-  text-align:center;
-  margin:20px 0; /* Erhöht von 16px */
-  font-size:13px;
-}
-
-/* KOMPLETT NEU: Toast System unten links positioniert */
+/* Toast System unten links positioniert */
 .toast-container{
   position:fixed;
   bottom:20px;
@@ -1574,7 +1473,6 @@ h3{font-size:16px;color:#d9d9df}
   gap:12px;
   color:var(--text);
   font-weight:500;
-  /* NEU: Auch Toast Text soll umbrechen */
   word-wrap:break-word;
   overflow-wrap:break-word;
 }
@@ -1593,7 +1491,7 @@ h3{font-size:16px;color:#d9d9df}
   color:var(--danger);
 }
 
-/* KOMPLETT NEU: Reset Confirmation Toast (statt Slider) */
+/* Reset Confirmation Toast */
 .reset-confirm-toast{
   position:fixed;
   bottom:80px;
@@ -1714,7 +1612,7 @@ h3{font-size:16px;color:#d9d9df}
   100% { left:100%; }
 }
 
-/* NEU: Entfernt alle pinken/violetten Outlines */
+/* Entfernt alle pinken/violetten Outlines */
 .modal *:focus,
 .modal *:focus-visible,
 .modal-content:focus,
@@ -1729,6 +1627,7 @@ h3{font-size:16px;color:#d9d9df}
   outline-offset:2px;
   box-shadow:0 0 0 3px rgba(169,112,255,.2);
 }
+
 @media (max-width:520px){
   .toast-container{
     bottom:10px;
@@ -1737,7 +1636,6 @@ h3{font-size:16px;color:#d9d9df}
   .toast{
     min-width:auto;
     max-width:calc(100vw - 20px);
-    /* NEU: Bessere mobile Handhabung */
     word-wrap:break-word;
     overflow-wrap:break-word;
   }
@@ -1765,7 +1663,7 @@ h3{font-size:16px;color:#d9d9df}
     gap:6px;
   }
   
-  .info-item{
+  .settings-group .info-item{
     padding:4px 6px;
     font-size:11px;
   }
@@ -1780,50 +1678,11 @@ h3{font-size:16px;color:#d9d9df}
     min-width:200px;
   }
   
-  /* NEU: Mobile Modal Verbesserungen */
   .modal-content{
     max-width:calc(100vw - 20px);
     max-height:calc(100vh - 20px);
     margin:10px;
     padding:20px;
-  }
-  
-  .winner-messages{
-    margin:16px 0;
-  }
-  
-  .messages-list{
-    max-height:120px;
-    font-size:12px;
-  }
-  
-  .winner-message{
-    padding:8px;
-    margin:6px 0;
-  }
-  
-  /* NEU: Mobile Chat Verbesserungen */
-  .chat .msg{
-    flex-direction:column;
-    align-items:flex-start;
-    gap:4px;
-  }
-  
-  .msg-content{
-    width:100%;
-    flex-direction:column;
-    align-items:flex-start;
-    gap:4px;
-  }
-  
-  .chat-user-info{
-    max-width:100%;
-    flex-wrap:wrap;
-  }
-  
-  .msg-text{
-    width:100%;
-    margin-top:4px;
   }
 }
 
@@ -1864,23 +1723,21 @@ h3{font-size:16px;color:#d9d9df}
 .user{ margin-left:auto }
 .topbar{ justify-content:space-between }
 
-/* NEU: Spezielle Behandlung für sehr lange Wörter/URLs */
+/* Spezielle Behandlung fÃ¼r sehr lange WÃ¶rter/URLs */
 .msg-text a, 
-.msg-text[href], 
-.winner-message .text a,
-.winner-message .text[href] {
+.msg-text[href] {
   word-break:break-all;
   overflow-wrap:break-word;
 }
 
-/* NEU: Bessere Emote-Handling im Text-Flow */
+/* Bessere Emote-Handling im Text-Flow */
 .msg-text img.chat-emote {
   max-width:100%;
   height:auto;
   vertical-align:text-bottom;
 }
 
-/* NEU: Container für sehr lange Nachrichten */
+/* Container fÃ¼r sehr lange Nachrichten */
 .chat .msg.long-message {
   max-height:120px;
   overflow-y:auto;
