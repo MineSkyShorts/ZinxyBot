@@ -3,7 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ZinxyBot â€” Sign in</title>
+  <title>ZinxyBot – Sign in</title>
+  
+  <!-- Favicon aus brand.png -->
+  <link rel="icon" type="image/png" href="/assets/favicon.png">
+  <link rel="apple-touch-icon" href="/assets/brand.png">
+  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -33,41 +38,108 @@
     .b3{left:70%; top:85%; background:radial-gradient(circle at 40% 50%, #22d3ee, transparent 60%), #4f46e5; animation-delay:6s}
     @keyframes floaty{0%,100%{transform:translate(-50%,-50%) scale(1)}50%{transform:translate(-48%,-52%) scale(1.05)}}
 
-    .wrap{min-height:100%; display:grid; place-items:center; padding:2rem}
+    .wrap{
+      min-height:100%; 
+      display:grid; 
+      place-items:center; 
+      padding:1rem;
+    }
     .card{
       width:min(640px,92vw);
       background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02)),var(--card);
-      border:1px solid var(--line); border-radius:16px;
+      border:1px solid var(--line); 
+      border-radius:16px;
       box-shadow:0 14px 40px rgba(0,0,0,.35);
       padding:24px 24px 20px;
     }
-    .brand{display:flex; align-items:center; gap:.8rem; justify-content:center; margin-bottom:.75rem; font-weight:800; letter-spacing:.2px}
+    .brand{
+      display:flex; 
+      align-items:center; 
+      gap:.8rem; 
+      justify-content:center; 
+      margin-bottom:.75rem; 
+      font-weight:800; 
+      letter-spacing:.2px;
+      flex-wrap:wrap;
+    }
     .brand .logo{
-      width:42px; height:42px; border-radius:12px; display:grid; place-items:center;
-      /* blaues Fill links neben dem Bild */
+      width:42px; 
+      height:42px; 
+      border-radius:12px; 
+      display:grid; 
+      place-items:center;
       background: linear-gradient(145deg, #3b82f6, #60a5fa);
       box-shadow:0 10px 24px rgba(59,130,246,.35);
     }
     .brand .logo img{width:42px; height:42px; object-fit:contain}
     .brand .name{font-size:1.25rem}
-    .headline{margin:6px 0 14px; text-align:center; font-size:1.35rem; font-weight:800; letter-spacing:-.01em}
+    .headline{
+      margin:6px 0 14px; 
+      text-align:center; 
+      font-size:1.35rem; 
+      font-weight:800; 
+      letter-spacing:-.01em;
+      line-height:1.3;
+    }
 
     .btn{
-      position:relative; overflow:hidden;
-      display:flex; align-items:center; justify-content:center; gap:.6rem;
-      width:100%; padding:1rem 1.1rem;
-      background:var(--twitch); color:#fff; text-decoration:none;
-      border-radius:12px; border:1px solid rgba(255,255,255,.12);
+      position:relative; 
+      overflow:hidden;
+      display:flex; 
+      align-items:center; 
+      justify-content:center; 
+      gap:.6rem;
+      width:100%; 
+      padding:1rem 1.1rem;
+      background:var(--twitch); 
+      color:#fff; 
+      text-decoration:none;
+      border-radius:12px; 
+      border:1px solid rgba(255,255,255,.12);
       transition:transform .14s ease, background .18s ease, box-shadow .18s ease;
       box-shadow:0 8px 18px rgba(145,70,255,.22);
+      font-size:1rem;
     }
-    .btn:hover{background:var(--twitch-700); transform:translateY(-1px); box-shadow:0 10px 22px rgba(119,44,232,.26)}
-    .btn::after{content:""; position:absolute; inset:-40%; pointer-events:none; background:radial-gradient(circle at 50% 50%, rgba(145,70,255,.18) 0%, rgba(145,70,255,0) 55%); opacity:0; transform:scale(.9); transition:opacity .18s ease, transform .18s ease}
+    .btn:hover{
+      background:var(--twitch-700); 
+      transform:translateY(-1px); 
+      box-shadow:0 10px 22px rgba(119,44,232,.26)
+    }
+    .btn::after{
+      content:""; 
+      position:absolute; 
+      inset:-40%; 
+      pointer-events:none; 
+      background:radial-gradient(circle at 50% 50%, rgba(145,70,255,.18) 0%, rgba(145,70,255,0) 55%); 
+      opacity:0; 
+      transform:scale(.9); 
+      transition:opacity .18s ease, transform .18s ease
+    }
     .btn:hover::after{opacity:.5; transform:scale(1)}
-    .btn svg{width:18px; height:18px}
+    .btn svg{width:18px; height:18px; flex-shrink:0}
 
-    .credits{margin:14px 4px 2px; color:#98a2b3; text-align:center; font-size:.92rem}
-    @media (max-width:520px){.headline{font-size:1.2rem}}
+    .credits{
+      margin:14px 4px 2px; 
+      color:#98a2b3; 
+      text-align:center; 
+      font-size:.92rem;
+      line-height:1.4;
+    }
+    
+    /* Verbesserte Mobile Responsivität */
+    @media (max-width:520px){
+      .headline{font-size:1.1rem}
+      .brand .name{font-size:1.1rem}
+      .btn{font-size:0.95rem; padding:0.9rem 1rem}
+      .card{padding:20px}
+    }
+    
+    @media (max-width:380px){
+      .headline{font-size:1rem}
+      .brand{gap:0.6rem}
+      .brand .logo{width:36px; height:36px}
+      .brand .logo img{width:36px; height:36px}
+    }
   </style>
 </head>
 <body>
@@ -81,7 +153,6 @@
     <div class="card" role="dialog" aria-labelledby="headline">
       <div class="brand">
         <div class="logo" aria-hidden="true">
-          <!-- PNG-Logo einbinden -->
           <img src="/assets/brand.png" alt="ZinxyBot logo" />
         </div>
         <div class="name">ZinxyBot</div>
@@ -96,7 +167,7 @@
         Sign in with Twitch
       </a>
 
-      <div class="credits">Â© 2025 <strong>zinxybot.net</strong> â€” All rights reserved.</div>
+      <div class="credits">© 2025 <strong>zinxybot.net</strong> – All rights reserved.</div>
     </div>
   </div>
 </body>
