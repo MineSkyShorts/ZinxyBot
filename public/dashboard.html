@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- DATEI: dashboard.html - KORRIGIERT für besseres State Management -->
+<!-- DATEI: dashboard.html - KORRIGIERT fÃ¼r besseres State Management -->
 <html lang="de">
 <head>
   <meta charset="utf-8" />
@@ -162,7 +162,7 @@
           Participants
           <span class="participant-count" id="participantCount" 
                 aria-live="polite" aria-label="Participant count">0</span>
-          <!-- Keyword hint wird dynamisch hier eingefügt -->
+          <!-- Keyword hint wird dynamisch hier eingefÃ¼gt -->
         </h3>
         <div class="search-field">
           <input type="text" id="participantSearch" 
@@ -331,7 +331,7 @@
       <div class="actions">
         <button class="btn btn--success" id="saveSettings">
           <i data-lucide="save" aria-hidden="true"></i>
-          Save Settings
+          <span class="save-text">Save Settings</span>
         </button>
       </div>
     </section>
@@ -343,7 +343,7 @@
     <div class="modal-content">
       <div class="confetti-container" id="confettiContainer" aria-hidden="true"></div>
       <div class="winner-content">
-        <h2 id="winner-title">🎉 Winner Selected! 🎉</h2>
+        <h2 id="winner-title">ðŸŽ‰ Winner Selected! ðŸŽ‰</h2>
         
         <!-- Winner Info with Account Created integrated -->
         <div class="winner-info-container">
@@ -361,33 +361,13 @@
           <!-- Account Created direkt integriert -->
           <div class="winner-account-info">
             <div class="account-created-item">
-              <span class="info-label">Account Created:</span>
+              <span class="info-label">Account created on</span>
               <span id="winnerCreatedAt" class="info-value">Loading...</span>
             </div>
           </div>
         </div>
         
-        <!-- Additional User Info Section -->
-        <div class="winner-user-info" id="winnerUserInfo" style="display: none;">
-          <div class="user-info-grid">
-            <div class="info-item" id="followInfoItem" style="display: none;">
-              <span class="info-label">Following Since:</span>
-              <span id="winnerFollowedAt" class="info-value">Loading...</span>
-            </div>
-            <div class="info-item" id="subInfoItem" style="display: none;">
-              <span class="info-label">Subscriber:</span>
-              <span id="winnerSubInfo" class="info-value">Yes</span>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Recent Messages Section -->
-        <div class="winner-messages" id="winnerMessages" style="display: none;">
-          <h4>Recent Messages:</h4>
-          <div class="messages-list" id="winnerMessagesList">
-            <p class="no-messages">No messages yet...</p>
-          </div>
-        </div>
+        <!-- Additional User Info Section - ENTFERNT -->
         
         <button id="closeWinnerModal" class="btn btn--primary" aria-label="Close winner announcement">
           <i data-lucide="x" aria-hidden="true"></i>
@@ -426,18 +406,18 @@
   <!-- Enhanced Toast Container -->
   <div id="toastContainer" class="toast-container" aria-live="polite" aria-label="Notifications"></div>
 
-  <!-- Screen reader only elements für bessere Accessibility -->
+  <!-- Screen reader only elements fÃ¼r bessere Accessibility -->
   <div class="sr-only">
     <div id="status-announcements" aria-live="assertive" aria-atomic="true"></div>
     <div id="error-announcements" aria-live="assertive" aria-atomic="true"></div>
   </div>
 
-  <footer class="footer">© 2025 zinxybot.net - All rights reserved.</footer>
+  <footer class="footer">Â© 2025 zinxybot.net - All rights reserved.</footer>
   
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
 
-  <!-- Utility Styles für bessere Accessibility -->
+  <!-- Utility Styles fÃ¼r bessere Accessibility -->
   <style>
     /* Screen reader only utility class */
     .sr-only {
