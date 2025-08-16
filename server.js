@@ -28,16 +28,29 @@ app.use(session({
   cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 }
 }));
 
-// ===================== BADGE CACHES =====================
+// ===================== BADGE UND EMOTE CACHES =====================
 let globalBadges = {};
 let channelBadges = {};
+let globalEmotes = new Map(); // Globale Twitch Emotes
+let channelEmotes = new Map(); // Channel-spezifische Emotes
+let bttvEmotes = new Map(); // BTTV Emotes
+let ffzEmotes = new Map(); // FrankerFaceZ Emotes
+
+// ===================== TEXT EMOTES MAPPING =====================
+const textEmotes = {
+  ':)': '😊', ':(': '😞', ':D': '😃', ':P': '😛', ':p': '😛',
+  ':|': '😐', ':/': '😕', ':\\': '😕', ':o': '😮', ':O': '😮',
+  ';)': '😉', ';P': '😜', ':3': '😊', '<3': '❤️', '</3': '💔',
+  'xD': '🤣', 'XD': '🤣', ':*': '😘', '8)': '😎', 'B)': '😎',
+  ':&gt;': '😊', '&lt;3': '❤️', 'o_O': '😳', 'O_o': '😳', '-_-': '😑'
+};
 
 // ===================== TWITCH API URLs =====================
 const TWITCH_AUTH = 'https://id.twitch.tv/oauth2/authorize';
 const TWITCH_TOKEN = 'https://id.twitch.tv/oauth2/token';
 const TWITCH_API = 'https://api.twitch.tv/helix';
 
-// ===================== SETTINGS - KORRIGIERT =====================
+// ===================== SETTINGS =====================
 const BASE_SCOPES = ['chat:read','chat:edit','channel:read:subscriptions','bits:read','moderator:read:followers'];
 let luckSettings = {
   enabled: true,
@@ -68,28 +81,192 @@ const spamTracker = new Map();
 const SPAM_THRESHOLD = 3;
 const SPAM_WINDOW = 10000;
 
-// ===================== BADGE LOADER FUNKTIONEN =====================
+// ===================== EMOTE LOADER FUNKTIONEN =====================
+async function loadGlobalEmotes(accessToken) {
+  try {
+    console.log('🌍 Loading global Twitch emotes...');
+    const response = await axios.get(`${TWITCH_API}/chat/emotes/global`, {
+      headers: {
+        'Client-Id': process.env.TWITCH_CLIENT_ID,
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+    
+    globalEmotes.clear();
+    response.data.data.forEach(emote => {
+      globalEmotes.set(emote.name, {
+        id: emote.id,
+        name: emote.name,
+        url: emote.images.url_1x,
+        url_2x: emote.images.url_2x,
+        url_4x: emote.images.url_4x
+      });
+    });
+    
+    console.log(`✅ Loaded ${globalEmotes.size} global Twitch emotes`);
+  } catch (error) {
+    console.error('❌ Failed to load global emotes:', error.message);
+  }
+}
+
+async function loadChannelEmotes(channelId, accessToken) {
+  try {
+    console.log(`📺 Loading channel emotes for ${channelId}...`);
+    const response = await axios.get(`${TWITCH_API}/chat/emotes`, {
+      headers: {
+        'Client-Id': process.env.TWITCH_CLIENT_ID,
+        'Authorization': `Bearer ${accessToken}`
+      },
+      params: { broadcaster_id: channelId }
+    });
+    
+    channelEmotes.clear();
+    response.data.data.forEach(emote => {
+      channelEmotes.set(emote.name, {
+        id: emote.id,
+        name: emote.name,
+        url: emote.images.url_1x,
+        url_2x: emote.images.url_2x,
+        url_4x: emote.images.url_4x
+      });
+    });
+    
+    console.log(`✅ Loaded ${channelEmotes.size} channel emotes for ${channelId}`);
+  } catch (error) {
+    console.error('❌ Failed to load channel emotes:', error.message);
+  }
+}
+
+async function loadBTTVEmotes(channelId = null) {
+  try {
+    console.log('🐸 Loading BTTV emotes...');
+    
+    // Global BTTV emotes
+    const globalResponse = await axios.get('https://api.betterttv.net/3/cached/emotes/global');
+    globalResponse.data.forEach(emote => {
+      bttvEmotes.set(emote.code, {
+        id: emote.id,
+        name: emote.code,
+        url: `https://cdn.betterttv.net/emote/${emote.id}/1x`,
+        url_2x: `https://cdn.betterttv.net/emote/${emote.id}/2x`,
+        url_4x: `https://cdn.betterttv.net/emote/${emote.id}/3x`,
+        provider: 'bttv'
+      });
+    });
+    
+    // Channel-specific BTTV emotes
+    if (channelId) {
+      try {
+        const channelResponse = await axios.get(`https://api.betterttv.net/3/cached/users/twitch/${channelId}`);
+        channelResponse.data.channelEmotes?.forEach(emote => {
+          bttvEmotes.set(emote.code, {
+            id: emote.id,
+            name: emote.code,
+            url: `https://cdn.betterttv.net/emote/${emote.id}/1x`,
+            url_2x: `https://cdn.betterttv.net/emote/${emote.id}/2x`,
+            url_4x: `https://cdn.betterttv.net/emote/${emote.id}/3x`,
+            provider: 'bttv'
+          });
+        });
+        
+        channelResponse.data.sharedEmotes?.forEach(emote => {
+          bttvEmotes.set(emote.code, {
+            id: emote.id,
+            name: emote.code,
+            url: `https://cdn.betterttv.net/emote/${emote.id}/1x`,
+            url_2x: `https://cdn.betterttv.net/emote/${emote.id}/2x`,
+            url_4x: `https://cdn.betterttv.net/emote/${emote.id}/3x`,
+            provider: 'bttv'
+          });
+        });
+      } catch (e) {
+        console.log('No BTTV channel emotes found for', channelId);
+      }
+    }
+    
+    console.log(`✅ Loaded ${bttvEmotes.size} BTTV emotes`);
+  } catch (error) {
+    console.error('❌ Failed to load BTTV emotes:', error.message);
+  }
+}
+
+async function loadFFZEmotes(channelId = null) {
+  try {
+    console.log('🌟 Loading FrankerFaceZ emotes...');
+    
+    // Global FFZ emotes
+    const globalResponse = await axios.get('https://api.frankerfacez.com/v1/set/global');
+    Object.values(globalResponse.data.sets).forEach(set => {
+      set.emoticons?.forEach(emote => {
+        const urls = emote.urls;
+        ffzEmotes.set(emote.name, {
+          id: emote.id,
+          name: emote.name,
+          url: `https:${urls['1'] || urls['2'] || urls['4']}`,
+          url_2x: `https:${urls['2'] || urls['1'] || urls['4']}`,
+          url_4x: `https:${urls['4'] || urls['2'] || urls['1']}`,
+          provider: 'ffz'
+        });
+      });
+    });
+    
+    // Channel-specific FFZ emotes
+    if (channelId) {
+      try {
+        const channelResponse = await axios.get(`https://api.frankerfacez.com/v1/room/id/${channelId}`);
+        Object.values(channelResponse.data.sets).forEach(set => {
+          set.emoticons?.forEach(emote => {
+            const urls = emote.urls;
+            ffzEmotes.set(emote.name, {
+              id: emote.id,
+              name: emote.name,
+              url: `https:${urls['1'] || urls['2'] || urls['4']}`,
+              url_2x: `https:${urls['2'] || urls['1'] || urls['4']}`,
+              url_4x: `https:${urls['4'] || urls['2'] || urls['1']}`,
+              provider: 'ffz'
+            });
+          });
+        });
+      } catch (e) {
+        console.log('No FFZ channel emotes found for', channelId);
+      }
+    }
+    
+    console.log(`✅ Loaded ${ffzEmotes.size} FFZ emotes`);
+  } catch (error) {
+    console.error('❌ Failed to load FFZ emotes:', error.message);
+  }
+}
+
+// ===================== BADGE LOADER FUNKTIONEN - ERWEITERT =====================
 async function loadGlobalBadges(accessToken) {
   try {
+    console.log('🏷️ Loading global badges...');
     const response = await axios.get(`${TWITCH_API}/chat/badges/global`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
         'Authorization': `Bearer ${accessToken}`
       }
     });
+    
     const badgeData = {};
     response.data.data.forEach(badgeSet => {
       badgeData[badgeSet.set_id] = {};
       badgeSet.versions.forEach(version => {
         badgeData[badgeSet.set_id][version.id] = {
           url: version.image_url_1x,
+          url_2x: version.image_url_2x,
+          url_4x: version.image_url_4x,
           title: version.title,
-          description: version.description
+          description: version.description,
+          clickAction: version.click_action || null,
+          clickUrl: version.click_url || null
         };
       });
     });
+    
     globalBadges = badgeData;
-    console.log('✅ Global badges loaded:', Object.keys(globalBadges));
+    console.log('✅ Global badges loaded:', Object.keys(globalBadges).length, 'sets');
     return badgeData;
   } catch (error) {
     console.error('❌ Failed to load global badges:', error.message);
@@ -99,6 +276,7 @@ async function loadGlobalBadges(accessToken) {
 
 async function loadChannelBadges(channelId, accessToken) {
   try {
+    console.log(`📺 Loading channel badges for ${channelId}...`);
     const response = await axios.get(`${TWITCH_API}/chat/badges`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -106,19 +284,29 @@ async function loadChannelBadges(channelId, accessToken) {
       },
       params: { broadcaster_id: channelId }
     });
+    
     const badgeData = {};
     response.data.data.forEach(badgeSet => {
       badgeData[badgeSet.set_id] = {};
       badgeSet.versions.forEach(version => {
         badgeData[badgeSet.set_id][version.id] = {
           url: version.image_url_1x,
+          url_2x: version.image_url_2x,
+          url_4x: version.image_url_4x,
           title: version.title,
-          description: version.description
+          description: version.description,
+          clickAction: version.click_action || null,
+          clickUrl: version.click_url || null
         };
       });
     });
+    
+    if (!channelBadges[channelId]) {
+      channelBadges[channelId] = {};
+    }
     channelBadges[channelId] = badgeData;
-    console.log('✅ Channel badges loaded for', channelId, ':', Object.keys(badgeData));
+    
+    console.log(`✅ Channel badges loaded for ${channelId}:`, Object.keys(badgeData).length, 'sets');
     return badgeData;
   } catch (error) {
     console.error('❌ Failed to load channel badges:', error.message);
@@ -138,7 +326,7 @@ async function loadUserProfileImage(userId, accessToken) {
     });
     if (response.data.data && response.data.data.length > 0) {
       const profileUrl = response.data.data[0].profile_image_url;
-      console.log(`✅ Profile image loaded for ${userId}:`, profileUrl);
+      console.log(`✅ Profile image loaded for ${userId}`);
       return profileUrl;
     }
     console.log(`⚠️ No profile image found for user ${userId}`);
@@ -149,19 +337,16 @@ async function loadUserProfileImage(userId, accessToken) {
   }
 }
 
-// ===================== BADGE PARSER UND HILFSFUNKTIONEN =====================
+// ===================== ERWEITERTE BADGE PARSER =====================
 function parseBadges(tags, channelId = null) {
   const badges = [];
   let badgeString = tags.badges || tags['badges-raw'] || '';
   
-  // Sicherstellen dass badgeString ein String ist
   if (typeof badgeString !== 'string') {
-    console.log('⚠️ Badge string is not a string:', typeof badgeString, badgeString);
     badgeString = String(badgeString || '');
   }
   
   if (!badgeString || badgeString.length === 0) {
-    console.log('⚠️ Empty badge string for user');
     return badges;
   }
   
@@ -177,47 +362,63 @@ function parseBadges(tags, channelId = null) {
         const cleanName = name.trim();
         const cleanVersion = version.trim();
         
+        const badgeData = getBadgeData(cleanName, cleanVersion, channelId);
         const badge = {
           name: cleanName,
           version: cleanVersion,
-          url: getBadgeUrl(cleanName, cleanVersion, channelId),
-          title: getBadgeTitle(cleanName, cleanVersion)
+          url: badgeData?.url || null,
+          url_2x: badgeData?.url_2x || null,
+          url_4x: badgeData?.url_4x || null,
+          title: badgeData?.title || getBadgeTitle(cleanName, cleanVersion),
+          description: badgeData?.description || '',
+          clickAction: badgeData?.clickAction || null,
+          clickUrl: badgeData?.clickUrl || null
         };
         
-        console.log('✅ Parsed badge:', badge);
-        badges.push(badge);
+        if (badge.url) {
+          badges.push(badge);
+          console.log('✅ Parsed badge:', badge.name, badge.version);
+        } else {
+          console.log('⚠️ No URL found for badge:', cleanName, cleanVersion);
+        }
       }
     }
   } catch (error) {
-    console.error('❌ Error parsing badges:', error.message, 'badgeString:', badgeString);
+    console.error('❌ Error parsing badges:', error.message);
   }
   
-  console.log('🏷️ Final badges array:', badges);
+  console.log(`🏷️ Final badges array: ${badges.length} badges`);
   return badges;
 }
 
-function getBadgeUrl(badgeName, badgeVersion, channelId = null) {
-  // Erst in Channel Badges schauen, dann in Global Badges
+function getBadgeData(badgeName, badgeVersion, channelId = null) {
+  // Erst in Channel Badges schauen
   if (channelId && channelBadges[channelId] && channelBadges[channelId][badgeName] && channelBadges[channelId][badgeName][badgeVersion]) {
-    return channelBadges[channelId][badgeName][badgeVersion].url;
+    return channelBadges[channelId][badgeName][badgeVersion];
   }
   
+  // Dann in Global Badges
   if (globalBadges[badgeName] && globalBadges[badgeName][badgeVersion]) {
-    return globalBadges[badgeName][badgeVersion].url;
+    return globalBadges[badgeName][badgeVersion];
   }
   
   return null;
 }
 
+function getBadgeUrl(badgeName, badgeVersion, channelId = null) {
+  const badgeData = getBadgeData(badgeName, badgeVersion, channelId);
+  return badgeData?.url || null;
+}
+
 function getBadgeTitle(badgeName, badgeVersion) {
-  // Global badges zuerst prüfen
-  if (globalBadges[badgeName] && globalBadges[badgeName][badgeVersion]) {
-    return globalBadges[badgeName][badgeVersion].title || `${badgeName} ${badgeVersion}`;
+  const badgeData = getBadgeData(badgeName, badgeVersion);
+  if (badgeData?.title) {
+    return badgeData.title;
   }
   
-  // Fallback titles
+  // Erweiterte Fallback titles
   const fallbackTitles = {
-    'subscriber': 'Subscriber',
+    'subscriber': `${badgeVersion} Month Subscriber`,
     'broadcaster': 'Broadcaster',
     'moderator': 'Moderator',
     'vip': 'VIP',
@@ -227,117 +428,57 @@ function getBadgeTitle(badgeName, badgeVersion) {
     'admin': 'Twitch Admin',
     'global_mod': 'Global Moderator',
     'bits': `${badgeVersion} Bits`,
-    'sub-gifter': 'Sub Gifter'
+    'sub-gifter': `Sub Gifter (${badgeVersion})`,
+    'sub-gift-leader': 'Sub Gift Leader',
+    'turbo': 'Turbo',
+    'partner': 'Partner',
+    'verified': 'Verified',
+    'artist-badge': 'Artist',
+    'moments': 'Clip Champ',
+    'clip-champ': 'Clip Champ',
+    'glhf-pledge': 'GLHF Pledge',
+    'glitchcon2020': 'GlitchCon 2020',
+    'twitch-recap-2021': 'Twitch Recap 2021',
+    'hype-train': `Hype Train Level ${badgeVersion}`,
+    'predictions': 'Predictions'
   };
   
   return fallbackTitles[badgeName] || `${badgeName} ${badgeVersion}`;
 }
 
-// ===================== KORRIGIERTE LUCK BERECHNUNG =====================
-function computeLuckFromTags(tags) {
-  if (!luckSettings.enabled) return 1.0;
-
-  let baseLuck = 1.0; // Base multiplier bleibt immer 1.0
-  let additionalLuck = 0.0; // Zusätzliche Luck die addiert wird
-  let badges = tags.badges || tags['badges-raw'] || '';
-  let badgeInfo = tags['badge-info'] || '';
-
-  // Sicherstellen dass badges ein String ist
-  if (typeof badges !== 'string') {
-    console.log('⚠️ Badges is not a string in computeLuckFromTags:', typeof badges, badges);
-    badges = String(badges || '');
+// ===================== ERWEITERTE EMOTE PARSER =====================
+function parseEmotesExtended(text, twitchEmotes = null) {
+  if (!text) return text;
+  
+  let result = text;
+  
+  // 1. Erst Twitch-native Emotes (von TMI Client)
+  if (twitchEmotes) {
+    result = parseNativeTwitchEmotes(result, twitchEmotes);
   }
   
-  // Sicherstellen dass badgeInfo ein String ist
-  if (typeof badgeInfo !== 'string') {
-    console.log('⚠️ BadgeInfo is not a string in computeLuckFromTags:', typeof badgeInfo, badgeInfo);
-    badgeInfo = String(badgeInfo || '');
-  }
-
-  console.log('🎯 Computing luck for badges:', badges, 'badgeInfo:', badgeInfo);
-
-  // Bit Badges - additive system (Bonus wird zu Base addiert)
-  if (badges.includes('bits/')) {
-    const bitsMatch = badges.match(/bits\/(\d+)/);
-    if (bitsMatch) {
-      const bitAmount = parseInt(bitsMatch[1]);
-      console.log('💎 Found bit badge:', bitAmount);
-      
-      // Find highest applicable bit tier and add bonus
-      for (const tier of luckSettings.bits.slice().reverse()) {
-        if (bitAmount >= tier.min) {
-          const bitBonus = tier.mult - 1.0; // Convert multiplier to bonus (e.g., 1.4 -> 0.4)
-          additionalLuck += bitBonus;
-          console.log('✅ Applied bit luck bonus:', bitBonus, 'for', bitAmount, 'bits');
-          break;
-        }
-      }
-    }
-  }
-
-  // Subscription Badges - additive system (Bonus wird zu Base addiert)
-  if (badges.includes('subscriber/') || badges.includes('founder/')) {
-    const subMatch = badgeInfo.match(/subscriber\/(\d+)/);
-    if (subMatch) {
-      const subMonths = parseInt(subMatch[1]);
-      console.log('👑 Found subscription:', subMonths, 'months');
-      
-      // Find highest applicable sub tier and add bonus
-      for (const tier of luckSettings.subs.slice().reverse()) {
-        if (subMonths >= tier.min) {
-          const subBonus = tier.mult - 1.0; // Convert multiplier to bonus (e.g., 1.5 -> 0.5)
-          additionalLuck += subBonus;
-          console.log('✅ Applied sub luck bonus:', subBonus, 'for', subMonths, 'months');
-          break;
-        }
-      }
-    } else {
-      // Default subscriber bonus if no specific months found
-      const defaultSubBonus = 0.2; // 1.2x - 1.0 = 0.2
-      additionalLuck += defaultSubBonus;
-      console.log('✅ Applied default subscriber luck bonus:', defaultSubBonus);
-    }
-  }
-
-  // Special badges - small additive bonus
-  if (badges.includes('broadcaster/') || badges.includes('moderator/') || badges.includes('vip/')) {
-    const specialBonus = 0.2; // 1.2x - 1.0 = 0.2
-    additionalLuck += specialBonus;
-    console.log('✅ Applied special badge luck bonus:', specialBonus);
-  }
-
-  // Final luck calculation: Base (1.0) + All additional bonuses
-  const totalLuck = baseLuck + additionalLuck;
-
-  // Round to 2 decimal places
-  const finalLuck = Math.round(totalLuck * 100) / 100;
-
-  console.log('🎯 Final luck calculated:', finalLuck, '(Base: 1.0 + Additional:', additionalLuck.toFixed(2) + ')');
-  return finalLuck;
+  // 2. Dann Text-Emotes (:), :( etc.)
+  result = parseTextEmotes(result);
+  
+  // 3. Dann globale und channel Twitch emotes
+  result = parseWordEmotes(result, globalEmotes, 'twitch');
+  result = parseWordEmotes(result, channelEmotes, 'twitch');
+  
+  // 4. BTTV Emotes
+  result = parseWordEmotes(result, bttvEmotes, 'bttv');
+  
+  // 5. FFZ Emotes
+  result = parseWordEmotes(result, ffzEmotes, 'ffz');
+  
+  return result;
 }
 
-// KORRIGIERTE Multiplier Text Funktion - Zeigt immer X.XXx (auch bei 1.00x)
-function getMultiplierText(luck) {
-  // Immer den aktuellen Luck-Wert anzeigen, auch bei 1.00x
-  return `${luck.toFixed(2)}x`;
-}
-
-function normalizeText(text) {
-  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-}
-
-function escapeRegExp(string) {
-  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function parseEmotes(text, emotes) {
+function parseNativeTwitchEmotes(text, emotes) {
   if (!emotes || !text) return text;
   
-  // Sicherstellen dass emotes ein String ist
   if (typeof emotes !== 'string') {
-    console.log('⚠️ Emotes is not a string:', typeof emotes, emotes);
     if (emotes === null || emotes === undefined) {
-      return text; // Keine Emotes zu parsen
+      return text;
     }
     emotes = String(emotes);
   }
@@ -346,15 +487,11 @@ function parseEmotes(text, emotes) {
     return text;
   }
   
-  console.log('😀 Parsing emotes:', emotes, 'for text:', text);
+  console.log('😀 Parsing native Twitch emotes:', emotes);
   
   try {
-    const emoteParts = [];
-    let lastIndex = 0;
-    
-    // Parse emote data: "emoteid:start-end,start-end/emoteid2:start-end"
-    const emoteGroups = emotes.split('/');
     const emoteReplacements = [];
+    const emoteGroups = emotes.split('/');
     
     for (const group of emoteGroups) {
       if (!group || typeof group !== 'string') continue;
@@ -378,33 +515,134 @@ function parseEmotes(text, emotes) {
       }
     }
     
-    // Sort by start position
-    emoteReplacements.sort((a, b) => a.start - b.start);
+    // Sort by start position (reverse order to avoid index shifting)
+    emoteReplacements.sort((a, b) => b.start - a.start);
     
-    // Build final text with emote images
-    let result = '';
-    let currentIndex = 0;
-    
+    let result = text;
     for (const emote of emoteReplacements) {
-      // Add text before emote
-      result += text.substring(currentIndex, emote.start);
-      
-      // Add emote image
-      result += `<img src="https://static-cdn.jtvnw.net/emoticons/v2/${emote.emoteId}/default/dark/1.0" alt="${emote.text}" class="chat-emote" title="${emote.text}">`;
-      
-      currentIndex = emote.end;
+      const before = result.substring(0, emote.start);
+      const after = result.substring(emote.end);
+      const emoteImg = `<img src="https://static-cdn.jtvnw.net/emoticons/v2/${emote.emoteId}/default/dark/1.0" alt="${emote.text}" class="chat-emote" title="${emote.text}">`;
+      result = before + emoteImg + after;
     }
     
-    // Add remaining text
-    result += text.substring(currentIndex);
-    
-    console.log('✅ Parsed emotes successfully');
     return result;
-    
   } catch (error) {
-    console.error('❌ Error parsing emotes:', error.message, 'emotes:', emotes, 'text:', text);
-    return text; // Fallback to original text
+    console.error('❌ Error parsing native Twitch emotes:', error.message);
+    return text;
   }
+}
+
+function parseTextEmotes(text) {
+  let result = text;
+  
+  // Parse text emotes like :), :( etc.
+  for (const [textEmote, emoji] of Object.entries(textEmotes)) {
+    const regex = new RegExp(`\\b${escapeRegExp(textEmote)}\\b`, 'gi');
+    result = result.replace(regex, `<span class="text-emote" title="${textEmote}">${emoji}</span>`);
+  }
+  
+  return result;
+}
+
+function parseWordEmotes(text, emoteMap, provider) {
+  if (!text || emoteMap.size === 0) return text;
+  
+  let result = text;
+  
+  // Parse word-based emotes (BTTV, FFZ, Global Twitch)
+  for (const [emoteName, emoteData] of emoteMap.entries()) {
+    const regex = new RegExp(`\\b${escapeRegExp(emoteName)}\\b`, 'g');
+    const replacement = `<img src="${emoteData.url}" alt="${emoteName}" class="chat-emote emote-${provider}" title="${emoteName} (${provider.toUpperCase()})">`;
+    result = result.replace(regex, replacement);
+  }
+  
+  return result;
+}
+
+// ===================== KORRIGIERTE LUCK BERECHNUNG =====================
+function computeLuckFromTags(tags) {
+  if (!luckSettings.enabled) return 1.0;
+
+  let baseLuck = 1.0;
+  let additionalLuck = 0.0;
+  let badges = tags.badges || tags['badges-raw'] || '';
+  let badgeInfo = tags['badge-info'] || '';
+
+  if (typeof badges !== 'string') {
+    badges = String(badges || '');
+  }
+  
+  if (typeof badgeInfo !== 'string') {
+    badgeInfo = String(badgeInfo || '');
+  }
+
+  console.log('🎯 Computing luck for badges:', badges, 'badgeInfo:', badgeInfo);
+
+  // Bit Badges
+  if (badges.includes('bits/')) {
+    const bitsMatch = badges.match(/bits\/(\d+)/);
+    if (bitsMatch) {
+      const bitAmount = parseInt(bitsMatch[1]);
+      console.log('💎 Found bit badge:', bitAmount);
+      
+      for (const tier of luckSettings.bits.slice().reverse()) {
+        if (bitAmount >= tier.min) {
+          const bitBonus = tier.mult - 1.0;
+          additionalLuck += bitBonus;
+          console.log('✅ Applied bit luck bonus:', bitBonus, 'for', bitAmount, 'bits');
+          break;
+        }
+      }
+    }
+  }
+
+  // Subscription Badges
+  if (badges.includes('subscriber/') || badges.includes('founder/')) {
+    const subMatch = badgeInfo.match(/subscriber\/(\d+)/);
+    if (subMatch) {
+      const subMonths = parseInt(subMatch[1]);
+      console.log('👑 Found subscription:', subMonths, 'months');
+      
+      for (const tier of luckSettings.subs.slice().reverse()) {
+        if (subMonths >= tier.min) {
+          const subBonus = tier.mult - 1.0;
+          additionalLuck += subBonus;
+          console.log('✅ Applied sub luck bonus:', subBonus, 'for', subMonths, 'months');
+          break;
+        }
+      }
+    } else {
+      const defaultSubBonus = 0.2;
+      additionalLuck += defaultSubBonus;
+      console.log('✅ Applied default subscriber luck bonus:', defaultSubBonus);
+    }
+  }
+
+  // Special badges
+  if (badges.includes('broadcaster/') || badges.includes('moderator/') || badges.includes('vip/')) {
+    const specialBonus = 0.2;
+    additionalLuck += specialBonus;
+    console.log('✅ Applied special badge luck bonus:', specialBonus);
+  }
+
+  const totalLuck = baseLuck + additionalLuck;
+  const finalLuck = Math.round(totalLuck * 100) / 100;
+
+  console.log('🎯 Final luck calculated:', finalLuck);
+  return finalLuck;
+}
+
+function getMultiplierText(luck) {
+  return `${luck.toFixed(2)}x`;
+}
+
+function normalizeText(text) {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // ===================== USER INFO API =====================
@@ -418,7 +656,6 @@ async function getUserInfo(userId, login, accessToken) {
       isFollowing: false
     };
     
-    // Get user creation date
     const userResponse = await axios.get(`${TWITCH_API}/users`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -431,7 +668,6 @@ async function getUserInfo(userId, login, accessToken) {
       userInfo.createdAt = userResponse.data.data[0].created_at;
     }
     
-    // Get follow information (if the channel is available)
     if (sessionRef?.user?.id) {
       try {
         const followResponse = await axios.get(`${TWITCH_API}/channels/followers`, {
@@ -504,7 +740,6 @@ class GiveawayManager {
     
     console.log('👑 Adding host to giveaway:', this.hostLogin);
     
-    // Host Profilbild laden wenn möglich
     let hostProfileUrl = null;
     if (sessionRef?.twitch?.access_token && this.channelId) {
       loadUserProfileImage(this.channelId, sessionRef.twitch.access_token)
@@ -514,7 +749,6 @@ class GiveawayManager {
             if (hostParticipant) {
               hostParticipant.profileImageUrl = url;
               this.participants.set(this.hostLogin, hostParticipant);
-              // Update über Socket senden
               io.emit('participant:update', hostParticipant);
             }
           }
@@ -527,9 +761,9 @@ class GiveawayManager {
       userId: this.channelId,
       displayName: this.hostLogin,
       joinedAt: new Date().toISOString(),
-      luck: 1.0, // Host gets base luck
+      luck: 1.0,
       badges: [{ name: 'broadcaster', version: '1', url: getBadgeUrl('broadcaster', '1'), title: 'Broadcaster' }],
-      multiplierText: '1.00x', // KORRIGIERT: Host zeigt "1.00x" statt "No Multiplier"
+      multiplierText: '1.00x',
       profileImageUrl: hostProfileUrl,
       isHost: true
     };
@@ -597,9 +831,7 @@ class GiveawayManager {
     if (this.subsOnly) {
       let badges = tags.badges || tags['badges-raw'] || '';
       
-      // Sicherstellen dass badges ein String ist
       if (typeof badges !== 'string') {
-        console.log('⚠️ Badges is not a string in tryAdd:', typeof badges, badges);
         badges = String(badges || '');
       }
       
@@ -627,22 +859,20 @@ class GiveawayManager {
       joinedAt: new Date().toISOString(),
       luck,
       badges,
-      multiplierText: getMultiplierText(luck), // KORRIGIERT: Verwendet neue Funktion
-      profileImageUrl: null // Wird später gesetzt
+      multiplierText: getMultiplierText(luck),
+      profileImageUrl: null
     };
 
     this.participants.set(login, participant);
     
-    // Profilbild asynchron laden und updaten
     if (userId && sessionRef?.twitch?.access_token) {
       loadUserProfileImage(userId, sessionRef.twitch.access_token)
         .then(profileUrl => {
           if (profileUrl) {
             participant.profileImageUrl = profileUrl;
             this.participants.set(login, participant);
-            // Update über Socket senden
             io.emit('participant:update', participant);
-            console.log(`✅ Profile image loaded for participant ${login}:`, profileUrl);
+            console.log(`✅ Profile image loaded for participant ${login}`);
           }
         })
         .catch(e => console.error('Failed to load participant profile image:', e));
@@ -651,29 +881,25 @@ class GiveawayManager {
     return participant;
   }
 
-  // Funktion zum Updaten aller Participants mit neuen Luck Settings
   updateParticipantsLuck() {
     console.log('🔄 Updating all participants with new luck settings');
     
     for (const [login, participant] of this.participants.entries()) {
-      // Simuliere tags für Luck-Berechnung
       const mockTags = {
         'username': participant.login,
         'display-name': participant.displayName,
         'user-id': participant.userId,
         'badges': participant.badges ? participant.badges.map(b => `${b.name}/${b.version}`).join(',') : '',
-        'badge-info': '' // TODO: Könnte verbessert werden wenn badge-info gespeichert wird
+        'badge-info': ''
       };
       
-      // Neue Luck berechnen
       const newLuck = computeLuckFromTags(mockTags);
       
       if (newLuck !== participant.luck) {
         participant.luck = newLuck;
-        participant.multiplierText = getMultiplierText(newLuck); // KORRIGIERT: Verwendet neue Funktion
+        participant.multiplierText = getMultiplierText(newLuck);
         this.participants.set(login, participant);
         
-        // Update an Client senden
         io.emit('participant:update', participant);
         console.log(`✅ Updated luck for ${login}: ${participant.multiplierText}`);
       }
@@ -757,16 +983,24 @@ async function ensureBotClient() {
   }
 }
 
-// ===================== TMI CLIENT =====================
+// ===================== KORRIGIERTE TMI CLIENT =====================
 async function ensureTmiClient(session) {
   if (tmiClient) return tmiClient;
   if (!session?.twitch?.access_token || !session?.user?.login) throw new Error('Missing token or login');
 
   sessionRef = session;
 
+  // Lade alle Badge- und Emote-Daten
   await loadGlobalBadges(session.twitch.access_token);
+  await loadGlobalEmotes(session.twitch.access_token);
+  await loadBTTVEmotes();
+  await loadFFZEmotes();
+  
   if (session.user.id) {
     await loadChannelBadges(session.user.id, session.twitch.access_token);
+    await loadChannelEmotes(session.user.id, session.twitch.access_token);
+    await loadBTTVEmotes(session.user.id);
+    await loadFFZEmotes(session.user.id);
   }
 
   tmiClient = new tmi.Client({
@@ -784,24 +1018,22 @@ async function ensureTmiClient(session) {
       message: message,
       badges: tags.badges,
       userId: tags['user-id'],
-      emotes: tags.emotes,
-      emoteType: typeof tags.emotes
+      emotes: tags.emotes
     });
 
     const userId = tags['user-id'];
     let profileImageUrl = null;
     
-    // Immer versuchen Profilbild zu laden
     if (userId && sessionRef?.twitch?.access_token) {
       try {
         profileImageUrl = await loadUserProfileImage(userId, sessionRef.twitch.access_token);
-        console.log(`🖼️ Profile image for ${tags['username']}:`, profileImageUrl);
       } catch (e) {
         console.error('Failed to load profile image:', e);
       }
     }
 
-    const parsedMessage = parseEmotes(message, tags.emotes);
+    // KORRIGIERT: Erweiterte Emote-Parsing
+    const parsedMessage = parseEmotesExtended(message, tags.emotes);
     const result = giveaway.tryAdd(tags, message);
 
     if (result && result.type === 'spam_blocked') {
@@ -832,7 +1064,6 @@ async function ensureTmiClient(session) {
     io.emit('chat', chatEvent);
 
     if (result && typeof result === 'object' && result.login) {
-      // Profilbild auch für Participant setzen
       if (profileImageUrl) {
         result.profileImageUrl = profileImageUrl;
         giveaway.participants.set(result.login, result);
@@ -1034,7 +1265,7 @@ app.get('/api/giveaway/participants', (req, res) => {
   });
 });
 
-// ===================== SETTINGS API - KORRIGIERT =====================
+// ===================== SETTINGS API =====================
 app.get('/api/settings/luck', (req,res) => res.json(luckSettings));
 app.put('/api/settings/luck', (req,res) => {
   const { enabled, bits, subs } = req.body || {};
@@ -1051,7 +1282,6 @@ app.put('/api/settings/luck', (req,res) => {
     luckSettings.subs = validSubs.sort((a, b) => a.min - b.min);
   }
   
-  // Update alle existing participants mit neuen Settings
   giveaway.updateParticipantsLuck();
   
   io.emit('settings:luck_updated', luckSettings);
@@ -1088,48 +1318,66 @@ app.put('/api/settings/keyword', (req,res) => {
   res.json({ ok:true, keyword: giveaway.keyword });
 });
 
-// ===================== CHAT ENDPOINTS =====================
+// ===================== KORRIGIERTE CHAT ENDPOINTS =====================
 app.post('/api/chat/send', async (req,res) => {
   try {
     if(!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
     const text = (req.body?.text || '').toString();
     if(!text.trim()) return res.status(400).json({ error: 'empty' });
-    const ch = (giveaway.channel || req.session.user.login).toLowerCase();
+    
+    // KORRIGIERT: Verwende aktuell angemeldeten Benutzer, nicht hardcoded
+    const currentUser = req.session.user;
+    const ch = (giveaway.channel || currentUser.login).toLowerCase();
     const client = await ensureTmiClient(req.session);
     if(!client.getChannels().includes('#' + ch)) await client.join(ch);
 
+    // KORRIGIERT: Verwende echte Session-Daten
     const simulatedTags = {
-      'username': req.session.user.login,
-      'display-name': req.session.user.display_name || req.session.user.login,
-      'user-id': req.session.user.id,
-      'color': req.session.user.color || '#a970ff',
-      'badges': 'broadcaster/1',
-      'badge-info': ''
+      'username': currentUser.login,
+      'display-name': currentUser.display_name || currentUser.login,
+      'user-id': currentUser.id,
+      'color': currentUser.color || '#a970ff',
+      'badges': 'broadcaster/1', // Host badge
+      'badge-info': '',
+      'emotes': null // Website messages haben keine nativen Twitch emotes
     };
+    
+    console.log('📤 Sending message as:', simulatedTags['display-name'], 'ID:', simulatedTags['user-id']);
+    
     const participant = giveaway.tryAdd(simulatedTags, text);
     await client.say(ch, text);
 
-    const badges = parseBadges(simulatedTags);
+    const badges = parseBadges(simulatedTags, giveaway.channelId);
     const luck = computeLuckFromTags(simulatedTags);
+
+    // KORRIGIERT: Erweiterte Emote-Parsing auch für Website-Nachrichten
+    const parsedMessage = parseEmotesExtended(text, null);
 
     const chatEvent = {
       channel: ch,
       user: simulatedTags['display-name'],
       userId: simulatedTags['user-id'],
       text: text,
-      message: text,
+      message: parsedMessage,
       color: simulatedTags.color,
       badges: badges,
       luck: luck,
       multiplierText: getMultiplierText(luck),
       timestamp: new Date().toISOString(),
       isParticipant: !!participant,
-      isSimulated: true
+      profileImageUrl: currentUser.profile_image_url,
+      isSimulated: true,
+      isTwitchUser: true
     };
 
     io.emit('chat', chatEvent);
     if (participant) {
+      if (currentUser.profile_image_url) {
+        participant.profileImageUrl = currentUser.profile_image_url;
+        giveaway.participants.set(participant.login, participant);
+      }
       io.emit('participant:add', participant);
+      io.emit('stats:update', giveaway.getStats());
     }
 
     res.json({ ok:true });
@@ -1172,7 +1420,6 @@ app.get('/dashboard', (req, res) => {
 io.on('connection', (socket) => {
   console.log('🔌 Client connected');
   
-  // Sende aktuellen Giveaway Status
   const currentStatus = giveaway.getStatus();
   socket.emit('giveaway:status', { 
     state: giveaway.state, 
@@ -1183,10 +1430,8 @@ io.on('connection', (socket) => {
     autoJoinHost: giveaway.autoJoinHost
   });
   
-  // Sende aktuelle Stats
   socket.emit('stats:update', giveaway.getStats());
   
-  // Sende alle aktuellen Participants
   const participants = Array.from(giveaway.participants.values());
   if (participants.length > 0) {
     console.log(`📤 Sending ${participants.length} participants to new client`);
@@ -1195,7 +1440,6 @@ io.on('connection', (socket) => {
     });
   }
   
-  // Listen for settings updates from client
   socket.on('settings:updated', (settings) => {
     console.log('🔥 Received settings update from client:', settings);
     
@@ -1218,5 +1462,5 @@ io.on('connection', (socket) => {
 const port = process.env.PORT || 3000;
 server.listen(port, () => {
   console.log(`🎬 ZinxyBot server running on http://localhost:${port}`);
-  console.log('🎯 Ready for giveaways!');
+  console.log('🎯 Ready for giveaways with enhanced emotes and badges!');
 });
