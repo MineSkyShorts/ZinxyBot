@@ -1,4 +1,4 @@
-// ===================== IMPORTS =====================
+// ===================== KORRIGIERTER SERVER.JS - BENUTZERSPEZIFISCH =====================
 import express from 'express';
 import session from 'express-session';
 import axios from 'axios';
@@ -28,21 +28,25 @@ app.use(session({
   cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 }
 }));
 
-// ===================== BADGE UND EMOTE CACHES =====================
-let globalBadges = {};
-let channelBadges = {};
-let globalEmotes = new Map(); // Globale Twitch Emotes
-let channelEmotes = new Map(); // Channel-spezifische Emotes
-let bttvEmotes = new Map(); // BTTV Emotes
-let ffzEmotes = new Map(); // FrankerFaceZ Emotes
+// ===================== BENUTZERSPEZIFISCHE DATENSTRUKTUREN =====================
+// Anstatt globaler Variablen jetzt Maps mit Benutzer-ID als Key
+const userSessions = new Map(); // userId -> { giveaway, settings, tmiClient, etc. }
+const userBadges = new Map(); // userId -> { global, channel }
+const userEmotes = new Map(); // userId -> { global, channel, bttv, ffz }
 
-// ===================== TEXT EMOTES MAPPING =====================
+// Globale Emotes/Badges (werden für alle Benutzer geteilt)
+let globalBadges = {};
+let globalEmotes = new Map();
+let bttvEmotes = new Map();
+let ffzEmotes = new Map();
+
+// ===================== TEXT EMOTES MAPPING ===================== 
 const textEmotes = {
   ':)': '😊', ':(': '😞', ':D': '😃', ':P': '😛', ':p': '😛',
   ':|': '😐', ':/': '😕', ':\\': '😕', ':o': '😮', ':O': '😮',
   ';)': '😉', ';P': '😜', ':3': '😊', '<3': '❤️', '</3': '💔',
   'xD': '🤣', 'XD': '🤣', ':*': '😘', '8)': '😎', 'B)': '😎',
-  ':&gt;': '😊', '&lt;3': '❤️', 'o_O': '😳', 'O_o': '😳', '-_-': '😑'
+  ':>': '😊', '<3': '❤️', 'o_O': '😳', 'O_o': '😳', '-_-': '😑'
 };
 
 // ===================== TWITCH API URLs =====================
@@ -50,41 +54,136 @@ const TWITCH_AUTH = 'https://id.twitch.tv/oauth2/authorize';
 const TWITCH_TOKEN = 'https://id.twitch.tv/oauth2/token';
 const TWITCH_API = 'https://api.twitch.tv/helix';
 
-// ===================== SETTINGS =====================
+// ===================== BASE SCOPES =====================
 const BASE_SCOPES = ['chat:read','chat:edit','channel:read:subscriptions','bits:read','moderator:read:followers'];
-let luckSettings = {
-  enabled: true,
-  bits: [
-    { min: 1000, mult: 1.2 },
-    { min: 5000, mult: 1.5 },
-    { min: 10000, mult: 2.0 },
-    { min: 25000, mult: 3.0 },
-    { min: 50000, mult: 4.0 },
-    { min: 100000, mult: 5.0 },
-    { min: 1000000, mult: 10.0 }
-  ],
-  subs: [
-    { min: 1, mult: 1.2 },
-    { min: 3, mult: 1.5 },
-    { min: 6, mult: 2.0 },
-    { min: 9, mult: 2.5 },
-    { min: 12, mult: 3.0 },
-    { min: 18, mult: 3.5 },
-    { min: 24, mult: 4.0 }
-  ]
-};
-let generalSettings = {
-  autoJoinHost: true,
-  antispam: true
-};
-const spamTracker = new Map();
-const SPAM_THRESHOLD = 3;
-const SPAM_WINDOW = 10000;
+
+// ===================== BENUTZERSPEZIFISCHE SESSION MANAGEMENT =====================
+function getUserSession(userId) {
+  if (!userSessions.has(userId)) {
+    userSessions.set(userId, {
+      giveaway: new GiveawayManager(),
+      luckSettings: {
+        enabled: true,
+        bits: [
+          { min: 1000, mult: 1.2 },
+          { min: 5000, mult: 1.5 },
+          { min: 10000, mult: 2.0 },
+          { min: 25000, mult: 3.0 },
+          { min: 50000, mult: 4.0 },
+          { min: 100000, mult: 5.0 },
+          { min: 1000000, mult: 10.0 }
+        ],
+        subs: [
+          { min: 1, mult: 1.2 },
+          { min: 3, mult: 1.5 },
+          { min: 6, mult: 2.0 },
+          { min: 9, mult: 2.5 },
+          { min: 12, mult: 3.0 },
+          { min: 18, mult: 3.5 },
+          { min: 24, mult: 4.0 }
+        ]
+      },
+      generalSettings: {
+        autoJoinHost: true,
+        antispam: true
+      },
+      spamTracker: new Map(),
+      tmiClient: null,
+      channelBadges: {},
+      channelEmotes: new Map(),
+      socketIds: new Set() // Socket-IDs für diesen Benutzer
+    });
+  }
+  return userSessions.get(userId);
+}
+
+function cleanupUserSession(userId) {
+  const session = userSessions.get(userId);
+  if (session) {
+    if (session.tmiClient) {
+      session.tmiClient.disconnect();
+    }
+    userSessions.delete(userId);
+    console.log(`🧹 Cleaned up session for user ${userId}`);
+  }
+}
+
+// ===================== SOCKET MANAGEMENT FÜR BENUTZER =====================
+const socketUserMap = new Map(); // socketId -> userId
+
+io.on('connection', (socket) => {
+  console.log('🔌 Client connected:', socket.id);
+  
+  // Bei Socket-Verbindung den Benutzer identifizieren
+  socket.on('auth', (userId) => {
+    if (userId) {
+      socketUserMap.set(socket.id, userId);
+      const userSession = getUserSession(userId);
+      userSession.socketIds.add(socket.id);
+      
+      // Sende aktuelle Daten nur an diesen Benutzer
+      sendUserSpecificData(socket, userId);
+      console.log(`✅ Socket ${socket.id} authenticated for user ${userId}`);
+    }
+  });
+  
+  socket.on('disconnect', () => {
+    const userId = socketUserMap.get(socket.id);
+    if (userId) {
+      const userSession = getUserSession(userId);
+      userSession.socketIds.delete(socket.id);
+      
+      // Wenn der Benutzer keine aktiven Sockets mehr hat, Session nach Timeout cleanup
+      if (userSession.socketIds.size === 0) {
+        setTimeout(() => {
+          const session = getUserSession(userId);
+          if (session.socketIds.size === 0) {
+            cleanupUserSession(userId);
+          }
+        }, 5 * 60 * 1000); // 5 Minuten Timeout
+      }
+      
+      socketUserMap.delete(socket.id);
+      console.log(`🔌 Socket ${socket.id} disconnected for user ${userId}`);
+    }
+  });
+});
+
+// Helper function um Daten nur an spezifische Benutzer zu senden
+function emitToUser(userId, event, data) {
+  const userSession = getUserSession(userId);
+  userSession.socketIds.forEach(socketId => {
+    io.to(socketId).emit(event, data);
+  });
+}
+
+function sendUserSpecificData(socket, userId) {
+  const userSession = getUserSession(userId);
+  
+  // Sende aktuellen Giveaway Status
+  socket.emit('giveaway:status', { 
+    state: userSession.giveaway.state, 
+    keyword: userSession.giveaway.keyword, 
+    channel: userSession.giveaway.channel,
+    duration: userSession.giveaway.duration,
+    subsOnly: userSession.giveaway.subsOnly,
+    autoJoinHost: userSession.generalSettings.autoJoinHost
+  });
+  
+  // Sende aktuelle Participants
+  const participants = Array.from(userSession.giveaway.participants.values());
+  participants.forEach(participant => {
+    socket.emit('participant:add', participant);
+  });
+  
+  // Sende Stats
+  socket.emit('stats:update', userSession.giveaway.getStats());
+}
 
 // ===================== EMOTE LOADER FUNKTIONEN =====================
 async function loadGlobalEmotes(accessToken) {
   try {
-    console.log('🌍 Loading global Twitch emotes...');
+    console.log('📝 Loading global Twitch emotes...');
     const response = await axios.get(`${TWITCH_API}/chat/emotes/global`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -109,7 +208,7 @@ async function loadGlobalEmotes(accessToken) {
   }
 }
 
-async function loadChannelEmotes(channelId, accessToken) {
+async function loadChannelEmotes(channelId, accessToken, userId) {
   try {
     console.log(`📺 Loading channel emotes for ${channelId}...`);
     const response = await axios.get(`${TWITCH_API}/chat/emotes`, {
@@ -120,9 +219,10 @@ async function loadChannelEmotes(channelId, accessToken) {
       params: { broadcaster_id: channelId }
     });
     
-    channelEmotes.clear();
+    const userSession = getUserSession(userId);
+    userSession.channelEmotes.clear();
     response.data.data.forEach(emote => {
-      channelEmotes.set(emote.name, {
+      userSession.channelEmotes.set(emote.name, {
         id: emote.id,
         name: emote.name,
         url: emote.images.url_1x,
@@ -131,7 +231,7 @@ async function loadChannelEmotes(channelId, accessToken) {
       });
     });
     
-    console.log(`✅ Loaded ${channelEmotes.size} channel emotes for ${channelId}`);
+    console.log(`✅ Loaded ${userSession.channelEmotes.size} channel emotes for ${channelId}`);
   } catch (error) {
     console.error('❌ Failed to load channel emotes:', error.message);
   }
@@ -139,10 +239,11 @@ async function loadChannelEmotes(channelId, accessToken) {
 
 async function loadBTTVEmotes(channelId = null) {
   try {
-    console.log('🐸 Loading BTTV emotes...');
+    console.log('🎭 Loading BTTV emotes...');
     
     // Global BTTV emotes
     const globalResponse = await axios.get('https://api.betterttv.net/3/cached/emotes/global');
+    bttvEmotes.clear();
     globalResponse.data.forEach(emote => {
       bttvEmotes.set(emote.code, {
         id: emote.id,
@@ -192,10 +293,11 @@ async function loadBTTVEmotes(channelId = null) {
 
 async function loadFFZEmotes(channelId = null) {
   try {
-    console.log('🌟 Loading FrankerFaceZ emotes...');
+    console.log('🐸 Loading FrankerFaceZ emotes...');
     
     // Global FFZ emotes
     const globalResponse = await axios.get('https://api.frankerfacez.com/v1/set/global');
+    ffzEmotes.clear();
     Object.values(globalResponse.data.sets).forEach(set => {
       set.emoticons?.forEach(emote => {
         const urls = emote.urls;
@@ -238,48 +340,16 @@ async function loadFFZEmotes(channelId = null) {
   }
 }
 
-// ===================== BADGE LOADER FUNKTIONEN - ERWEITERT =====================
+// ===================== BADGE LOADER FUNKTIONEN =====================
 async function loadGlobalBadges(accessToken) {
   try {
-    console.log('🏷️ Loading global badges...');
+    console.log('🏆 Loading global badges...');
     const response = await axios.get(`${TWITCH_API}/chat/badges/global`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
         'Authorization': `Bearer ${accessToken}`
       }
     });
-
-    // Lade zusätzliche Badge-Sets die möglicherweise fehlen
-async function loadAdditionalBadgeSets(accessToken) {
-  try {
-    console.log('🏷️ Loading additional badge sets...');
-    
-    // Lade Bits Badges
-    try {
-      const bitsResponse = await axios.get(`${TWITCH_API}/bits/leaderboard`, {
-        headers: {
-          'Client-Id': process.env.TWITCH_CLIENT_ID,
-          'Authorization': `Bearer ${accessToken}`
-        },
-        params: { count: 1, period: 'all' }
-      });
-      console.log('✅ Bits badge data loaded');
-    } catch (e) {
-      console.log('ℹ️ Could not load bits badges:', e.message);
-    }
-    
-    // Stelle sicher dass alle Standard-Badges geladen sind
-    const standardBadges = ['broadcaster', 'moderator', 'vip', 'subscriber', 'premium', 'turbo', 'partner', 'staff'];
-    for (const badgeType of standardBadges) {
-      if (!globalBadges[badgeType]) {
-        console.log(`⚠️ Missing badge type: ${badgeType}, will use fallback`);
-      }
-    }
-    
-  } catch (error) {
-    console.error('❌ Failed to load additional badge sets:', error.message);
-  }
-}
     
     const badgeData = {};
     response.data.data.forEach(badgeSet => {
@@ -306,7 +376,7 @@ async function loadAdditionalBadgeSets(accessToken) {
   }
 }
 
-async function loadChannelBadges(channelId, accessToken) {
+async function loadChannelBadges(channelId, accessToken, userId) {
   try {
     console.log(`📺 Loading channel badges for ${channelId}...`);
     const response = await axios.get(`${TWITCH_API}/chat/badges`, {
@@ -333,48 +403,14 @@ async function loadChannelBadges(channelId, accessToken) {
       });
     });
     
-    if (!channelBadges[channelId]) {
-      channelBadges[channelId] = {};
-    }
-    channelBadges[channelId] = badgeData;
+    const userSession = getUserSession(userId);
+    userSession.channelBadges = badgeData;
     
     console.log(`✅ Channel badges loaded for ${channelId}:`, Object.keys(badgeData).length, 'sets');
     return badgeData;
   } catch (error) {
     console.error('❌ Failed to load channel badges:', error.message);
     return {};
-  }
-}
-
-// Lade zusätzliche Badge-Sets die möglicherweise fehlen
-async function loadAdditionalBadgeSets(accessToken) {
-  try {
-    console.log('🏷️ Loading additional badge sets...');
-    
-    // Lade Bits Badges
-    try {
-      const bitsResponse = await axios.get(`${TWITCH_API}/bits/leaderboard`, {
-        headers: {
-          'Client-Id': process.env.TWITCH_CLIENT_ID,
-          'Authorization': `Bearer ${accessToken}`
-        },
-        params: { count: 1, period: 'all' }
-      });
-      console.log('✅ Bits badge data loaded');
-    } catch (e) {
-      console.log('ℹ️ Could not load bits badges:', e.message);
-    }
-    
-    // Stelle sicher dass alle Standard-Badges geladen sind
-    const standardBadges = ['broadcaster', 'moderator', 'vip', 'subscriber', 'premium', 'turbo', 'partner', 'staff'];
-    for (const badgeType of standardBadges) {
-      if (!globalBadges[badgeType]) {
-        console.log(`⚠️ Missing badge type: ${badgeType}, will use fallback`);
-      }
-    }
-    
-  } catch (error) {
-    console.error('❌ Failed to load additional badge sets:', error.message);
   }
 }
 
@@ -401,17 +437,14 @@ async function loadUserProfileImage(userId, accessToken) {
   }
 }
 
-// ===================== ERWEITERTE BADGE PARSER =====================
-function parseBadges(tags, channelId = null) {
+// ===================== BADGE PARSER =====================
+function parseBadges(tags, userId = null) {
   const badges = [];
   
-  // Versuche verschiedene Badge-Formate
   let badgeString = tags.badges || tags['badges-raw'] || '';
   let badgeInfoString = tags['badge-info'] || tags['badge-info-raw'] || '';
   
-  // Fallback für TMI.js Format
   if (typeof tags.badges === 'object' && tags.badges !== null && !Array.isArray(tags.badges)) {
-    // TMI.js gibt manchmal ein Object zurück statt String
     badgeString = Object.entries(tags.badges)
       .map(([key, value]) => `${key}/${value}`)
       .join(',');
@@ -425,16 +458,7 @@ function parseBadges(tags, channelId = null) {
     badgeInfoString = String(badgeInfoString || '');
   }
   
-  console.log('🏷️ Parsing badges - Input:', {
-    badgeString,
-    badgeInfoString,
-    channelId,
-    tagsType: typeof tags.badges,
-    tagsValue: tags.badges
-  });
-  
   if (!badgeString || badgeString.length === 0) {
-    console.log('⚠️ No badges found in tags');
     return badges;
   }
   
@@ -448,9 +472,7 @@ function parseBadges(tags, channelId = null) {
         const cleanName = name.trim();
         const cleanVersion = String(version).trim();
         
-        console.log(`🔍 Processing badge: ${cleanName}/${cleanVersion}`);
-        
-        const badgeData = getBadgeData(cleanName, cleanVersion, channelId);
+        const badgeData = getBadgeData(cleanName, cleanVersion, userId);
         const badge = {
           name: cleanName,
           version: cleanVersion,
@@ -465,18 +487,13 @@ function parseBadges(tags, channelId = null) {
         
         if (badge.url) {
           badges.push(badge);
-          console.log('✅ Added badge:', badge.name, badge.version, badge.title);
         } else {
-          // Versuche Fallback URL für unbekannte Badges
           const fallbackUrl = getFallbackBadgeUrl(cleanName, cleanVersion);
           if (fallbackUrl) {
             badge.url = fallbackUrl;
             badge.url_2x = fallbackUrl;
             badge.url_4x = fallbackUrl;
             badges.push(badge);
-            console.log('✅ Added badge with fallback URL:', badge.name, badge.version);
-          } else {
-            console.log('⚠️ No URL found for badge:', cleanName, cleanVersion);
           }
         }
       }
@@ -485,14 +502,15 @@ function parseBadges(tags, channelId = null) {
     console.error('❌ Error parsing badges:', error.message);
   }
   
-  console.log(`🏷️ Final badges array: ${badges.length} badges:`, badges.map(b => `${b.name}/${b.version}`));
   return badges;
 }
 
-// ===================== BADGE DATA HELPER =====================
-function getBadgeData(badgeSet, version, channelId = null) {
-  if (channelId && channelBadges[channelId] && channelBadges[channelId][badgeSet]) {
-    return channelBadges[channelId][badgeSet][version] || null;
+function getBadgeData(badgeSet, version, userId = null) {
+  if (userId) {
+    const userSession = getUserSession(userId);
+    if (userSession.channelBadges && userSession.channelBadges[badgeSet]) {
+      return userSession.channelBadges[badgeSet][version] || null;
+    }
   }
   if (globalBadges[badgeSet]) {
     return globalBadges[badgeSet][version] || null;
@@ -500,23 +518,7 @@ function getBadgeData(badgeSet, version, channelId = null) {
   return null;
 }
 
-
-function getBadgeUrl(badge, version, channelId) {
-  const data = getBadgeData(badge, version, channelId);
-  if (!data) return null;
-
-  return {
-    url: data.url_1x,
-    url_2x: data.url_2x,
-    url_4x: data.url_4x,
-    title: data.title || badge
-  };
-}
-
-
-// Neue Hilfsfunktion für Fallback Badge URLs
 function getFallbackBadgeUrl(badgeName, badgeVersion) {
-  // Standard Twitch Badge URL Format als Fallback
   const baseUrl = 'https://static-cdn.jtvnw.net/badges/v1';
   
   const knownBadges = {
@@ -533,14 +535,12 @@ function getFallbackBadgeUrl(badgeName, badgeVersion) {
   return knownBadges[badgeName] || null;
 }
 
-// Erweiterte getBadgeTitle Funktion
 function getBadgeTitle(badgeName, badgeVersion, badgeInfoString = '') {
   const badgeData = getBadgeData(badgeName, badgeVersion);
   if (badgeData?.title) {
     return badgeData.title;
   }
   
-  // Parse badge-info für zusätzliche Informationen
   let additionalInfo = '';
   if (badgeInfoString && badgeInfoString.includes(badgeName)) {
     const infoMatch = badgeInfoString.match(new RegExp(`${badgeName}\\/(\\d+)`));
@@ -549,7 +549,6 @@ function getBadgeTitle(badgeName, badgeVersion, badgeInfoString = '') {
     }
   }
   
-  // Erweiterte Fallback titles
   const fallbackTitles = {
     'subscriber': additionalInfo ? `${additionalInfo} Month Subscriber` : `Subscriber`,
     'broadcaster': 'Broadcaster',
@@ -566,46 +565,36 @@ function getBadgeTitle(badgeName, badgeVersion, badgeInfoString = '') {
     'sub-gift-leader': 'Sub Gift Leader',
     'turbo': 'Turbo',
     'partner': 'Verified',
-    'verified': 'Verified',
-    'artist-badge': 'Artist',
-    'moments': 'Moments',
-    'clip-champ': 'Clip Champ',
-    'glhf-pledge': 'GLHF Pledge',
-    'glitchcon2020': 'GlitchCon 2020',
-    'twitch-recap-2023': 'Twitch Recap 2023',
-    'hype-train': `Hype Train Level ${badgeVersion}`,
-    'predictions': 'Predictions',
-    'no_audio': 'No Audio',
-    'no_video': 'No Video',
-    'ambassador': 'Twitch Ambassador',
-    'animated': 'Animated Emotes',
-    'anonymous-cheerer': 'Anonymous Cheerer'
+    'verified': 'Verified'
   };
   
   return fallbackTitles[badgeName] || `${badgeName} ${badgeVersion}`;
 }
-// ===================== ERWEITERTE EMOTE PARSER =====================
-function parseEmotesExtended(text, twitchEmotes = null) {
+
+// ===================== EMOTE PARSER =====================
+function parseEmotesExtended(text, twitchEmotes = null, userId = null) {
   if (!text) return text;
   
   let result = text;
   
-  // 1. Erst Twitch-native Emotes (von TMI Client)
+  // 1. Twitch-native Emotes
   if (twitchEmotes) {
     result = parseNativeTwitchEmotes(result, twitchEmotes);
   }
   
-  // 2. Dann Text-Emotes (:), :( etc.)
+  // 2. Text-Emotes
   result = parseTextEmotes(result);
   
-  // 3. Dann globale und channel Twitch emotes
+  // 3. Globale und channel Twitch emotes
   result = parseWordEmotes(result, globalEmotes, 'twitch');
-  result = parseWordEmotes(result, channelEmotes, 'twitch');
   
-  // 4. BTTV Emotes
+  if (userId) {
+    const userSession = getUserSession(userId);
+    result = parseWordEmotes(result, userSession.channelEmotes, 'twitch');
+  }
+  
+  // 4. BTTV und FFZ Emotes
   result = parseWordEmotes(result, bttvEmotes, 'bttv');
-  
-  // 5. FFZ Emotes
   result = parseWordEmotes(result, ffzEmotes, 'ffz');
   
   return result;
@@ -624,8 +613,6 @@ function parseNativeTwitchEmotes(text, emotes) {
   if (emotes.length === 0) {
     return text;
   }
-  
-  console.log('😀 Parsing native Twitch emotes:', emotes);
   
   try {
     const emoteReplacements = [];
@@ -653,7 +640,6 @@ function parseNativeTwitchEmotes(text, emotes) {
       }
     }
     
-    // Sort by start position (reverse order to avoid index shifting)
     emoteReplacements.sort((a, b) => b.start - a.start);
     
     let result = text;
@@ -674,7 +660,6 @@ function parseNativeTwitchEmotes(text, emotes) {
 function parseTextEmotes(text) {
   let result = text;
   
-  // Parse text emotes like :), :( etc.
   for (const [textEmote, emoji] of Object.entries(textEmotes)) {
     const regex = new RegExp(`\\b${escapeRegExp(textEmote)}\\b`, 'gi');
     result = result.replace(regex, `<span class="text-emote" title="${textEmote}">${emoji}</span>`);
@@ -688,7 +673,6 @@ function parseWordEmotes(text, emoteMap, provider) {
   
   let result = text;
   
-  // Parse word-based emotes (BTTV, FFZ, Global Twitch)
   for (const [emoteName, emoteData] of emoteMap.entries()) {
     const regex = new RegExp(`\\b${escapeRegExp(emoteName)}\\b`, 'g');
     const replacement = `<img src="${emoteData.url}" alt="${emoteName}" class="chat-emote emote-${provider}" title="${emoteName} (${provider.toUpperCase()})">`;
@@ -698,9 +682,10 @@ function parseWordEmotes(text, emoteMap, provider) {
   return result;
 }
 
-// ===================== KORRIGIERTE LUCK BERECHNUNG =====================
-function computeLuckFromTags(tags) {
-  if (!luckSettings.enabled) return 1.0;
+// ===================== LUCK BERECHNUNG =====================
+function computeLuckFromTags(tags, userId) {
+  const userSession = getUserSession(userId);
+  if (!userSession.luckSettings.enabled) return 1.0;
 
   let baseLuck = 1.0;
   let additionalLuck = 0.0;
@@ -715,20 +700,16 @@ function computeLuckFromTags(tags) {
     badgeInfo = String(badgeInfo || '');
   }
 
-  console.log('🎯 Computing luck for badges:', badges, 'badgeInfo:', badgeInfo);
-
   // Bit Badges
   if (badges.includes('bits/')) {
     const bitsMatch = badges.match(/bits\/(\d+)/);
     if (bitsMatch) {
       const bitAmount = parseInt(bitsMatch[1]);
-      console.log('💎 Found bit badge:', bitAmount);
       
-      for (const tier of luckSettings.bits.slice().reverse()) {
+      for (const tier of userSession.luckSettings.bits.slice().reverse()) {
         if (bitAmount >= tier.min) {
           const bitBonus = tier.mult - 1.0;
           additionalLuck += bitBonus;
-          console.log('✅ Applied bit luck bonus:', bitBonus, 'for', bitAmount, 'bits');
           break;
         }
       }
@@ -740,20 +721,17 @@ function computeLuckFromTags(tags) {
     const subMatch = badgeInfo.match(/subscriber\/(\d+)/);
     if (subMatch) {
       const subMonths = parseInt(subMatch[1]);
-      console.log('👑 Found subscription:', subMonths, 'months');
       
-      for (const tier of luckSettings.subs.slice().reverse()) {
+      for (const tier of userSession.luckSettings.subs.slice().reverse()) {
         if (subMonths >= tier.min) {
           const subBonus = tier.mult - 1.0;
           additionalLuck += subBonus;
-          console.log('✅ Applied sub luck bonus:', subBonus, 'for', subMonths, 'months');
           break;
         }
       }
     } else {
       const defaultSubBonus = 0.2;
       additionalLuck += defaultSubBonus;
-      console.log('✅ Applied default subscriber luck bonus:', defaultSubBonus);
     }
   }
 
@@ -761,13 +739,11 @@ function computeLuckFromTags(tags) {
   if (badges.includes('broadcaster/') || badges.includes('moderator/') || badges.includes('vip/')) {
     const specialBonus = 0.2;
     additionalLuck += specialBonus;
-    console.log('✅ Applied special badge luck bonus:', specialBonus);
   }
 
   const totalLuck = baseLuck + additionalLuck;
   const finalLuck = Math.round(totalLuck * 100) / 100;
 
-  console.log('🎯 Final luck calculated:', finalLuck);
   return finalLuck;
 }
 
@@ -806,28 +782,6 @@ async function getUserInfo(userId, login, accessToken) {
       userInfo.createdAt = userResponse.data.data[0].created_at;
     }
     
-    if (sessionRef?.user?.id) {
-      try {
-        const followResponse = await axios.get(`${TWITCH_API}/channels/followers`, {
-          headers: {
-            'Client-Id': process.env.TWITCH_CLIENT_ID,
-            'Authorization': `Bearer ${accessToken}`
-          },
-          params: { 
-            broadcaster_id: sessionRef.user.id,
-            user_id: userId
-          }
-        });
-        
-        if (followResponse.data.data && followResponse.data.data.length > 0) {
-          userInfo.isFollowing = true;
-          userInfo.followedAt = followResponse.data.data[0].followed_at;
-        }
-      } catch (e) {
-        console.log('Could not fetch follow info:', e.message);
-      }
-    }
-    
     return userInfo;
   } catch (error) {
     console.error('Failed to get user info:', error.message);
@@ -835,7 +789,7 @@ async function getUserInfo(userId, login, accessToken) {
   }
 }
 
-// ===================== GIVEAWAY MANAGER =====================
+// ===================== GIVEAWAY MANAGER - BENUTZERSPEZIFISCH =====================
 class GiveawayManager {
   constructor() {
     this.state = 'idle';
@@ -864,10 +818,7 @@ class GiveawayManager {
     this.participants.clear();
     this.blockedUsers.clear();
     this.spamBlockedUsers.clear();
-    spamTracker.clear();
 
-    console.log('🚀 Giveaway started with autoJoinHost:', autoJoinHost);
-    
     if (autoJoinHost && hostLogin) {
       this.addHost();
     }
@@ -876,24 +827,6 @@ class GiveawayManager {
   addHost() {
     if (!this.hostLogin) return;
     
-    console.log('👑 Adding host to giveaway:', this.hostLogin);
-    
-    let hostProfileUrl = null;
-    if (sessionRef?.twitch?.access_token && this.channelId) {
-      loadUserProfileImage(this.channelId, sessionRef.twitch.access_token)
-        .then(url => {
-          if (url) {
-            const hostParticipant = this.participants.get(this.hostLogin);
-            if (hostParticipant) {
-              hostParticipant.profileImageUrl = url;
-              this.participants.set(this.hostLogin, hostParticipant);
-              io.emit('participant:update', hostParticipant);
-            }
-          }
-        })
-        .catch(e => console.error('Failed to load host profile image:', e));
-    }
-    
     const hostParticipant = {
       login: this.hostLogin,
       userId: this.channelId,
@@ -901,13 +834,13 @@ class GiveawayManager {
       joinedAt: new Date().toISOString(),
       luck: 1.0,
       badges: [{ 
-  name: 'broadcaster', 
-  version: '1', 
-  url: getBadgeUrl('broadcaster', '1', this.channelId), 
-  title: 'Broadcaster' 
-}],
+        name: 'broadcaster', 
+        version: '1', 
+        url: getFallbackBadgeUrl('broadcaster', '1'), 
+        title: 'Broadcaster' 
+      }],
       multiplierText: '1.00x',
-      profileImageUrl: hostProfileUrl,
+      profileImageUrl: null,
       isHost: true
     };
     this.participants.set(this.hostLogin, hostParticipant);
@@ -915,10 +848,7 @@ class GiveawayManager {
   }
 
   lock() { this.state = 'locked'; }
-  
-  resume() { 
-    this.state = 'collect'; 
-  }
+  resume() { this.state = 'collect'; }
 
   stop() {
     this.state = 'idle';
@@ -932,19 +862,26 @@ class GiveawayManager {
     this.subsOnly = false;
     this.autoJoinHost = true;
     this.startTime = null;
-    spamTracker.clear();
   }
 
-  checkSpam(login, message) {
-    if (!generalSettings.antispam) return false;
+  checkSpam(login, message, userId) {
+    const userSession = getUserSession(userId);
+    if (!userSession.generalSettings.antispam) return false;
+    
+    const SPAM_THRESHOLD = 3;
+    const SPAM_WINDOW = 10000;
     const now = Date.now();
-    const userSpam = spamTracker.get(login) || { count: 0, lastMessage: 0, blocked: false };
+    const userSpam = userSession.spamTracker.get(login) || { count: 0, lastMessage: 0, blocked: false };
+    
     if (userSpam.blocked || this.spamBlockedUsers.has(login)) return true;
+    
     if (now - userSpam.lastMessage > SPAM_WINDOW) {
       userSpam.count = 0;
     }
+    
     const msgNorm = normalizeText(message).toLowerCase();
     const kwNorm = normalizeText(this.keyword).toLowerCase();
+    
     if (kwNorm && msgNorm.includes(kwNorm)) {
       userSpam.count++;
       userSpam.lastMessage = now;
@@ -952,24 +889,25 @@ class GiveawayManager {
         userSpam.blocked = true;
         this.spamBlockedUsers.add(login);
         this.participants.delete(login);
-        spamTracker.set(login, userSpam);
-        console.log(`🚫 User ${login} blocked for spamming (${userSpam.count} messages)`);
+        userSession.spamTracker.set(login, userSpam);
         return true;
       }
     }
-    spamTracker.set(login, userSpam);
+    
+    userSession.spamTracker.set(login, userSpam);
     return false;
   }
 
-  tryAdd(tags, message) {
+  tryAdd(tags, message, userId) {
     if (this.state !== 'collect') return false;
     if (!message) return false;
 
     const login = tags['username'];
     const displayName = tags['display-name'] || login;
+    
     if (this.spamBlockedUsers.has(login)) return false;
     if (this.participants.has(login)) return false;
-    if (this.checkSpam(login, message)) return { type: 'spam_blocked', login, displayName };
+    if (this.checkSpam(login, message, userId)) return { type: 'spam_blocked', login, displayName };
 
     if (this.subsOnly) {
       let badges = tags.badges || tags['badges-raw'] || '';
@@ -991,13 +929,13 @@ class GiveawayManager {
     const pattern = new RegExp(`(^|[^\\p{L}\\p{N}_])${escapeRegExp(kwNorm)}($|[^\\p{L}\\p{N}_])`, 'iu');
     if (!pattern.test(msgNorm)) return false;
 
-    const userId = tags['user-id'] || null;
-    const luck = computeLuckFromTags(tags);
-    const badges = parseBadges(tags, this.channelId);
+    const participantUserId = tags['user-id'] || null;
+    const luck = computeLuckFromTags(tags, userId);
+    const badges = parseBadges(tags, userId);
 
     const participant = {
       login,
-      userId,
+      userId: participantUserId,
       displayName,
       joinedAt: new Date().toISOString(),
       luck,
@@ -1007,26 +945,10 @@ class GiveawayManager {
     };
 
     this.participants.set(login, participant);
-    
-    if (userId && sessionRef?.twitch?.access_token) {
-      loadUserProfileImage(userId, sessionRef.twitch.access_token)
-        .then(profileUrl => {
-          if (profileUrl) {
-            participant.profileImageUrl = profileUrl;
-            this.participants.set(login, participant);
-            io.emit('participant:update', participant);
-            console.log(`✅ Profile image loaded for participant ${login}`);
-          }
-        })
-        .catch(e => console.error('Failed to load participant profile image:', e));
-    }
-    
     return participant;
   }
 
-  updateParticipantsLuck() {
-    console.log('🔄 Updating all participants with new luck settings');
-    
+  updateParticipantsLuck(userId) {
     for (const [login, participant] of this.participants.entries()) {
       const mockTags = {
         'username': participant.login,
@@ -1036,15 +958,14 @@ class GiveawayManager {
         'badge-info': ''
       };
       
-      const newLuck = computeLuckFromTags(mockTags);
+      const newLuck = computeLuckFromTags(mockTags, userId);
       
       if (newLuck !== participant.luck) {
         participant.luck = newLuck;
         participant.multiplierText = getMultiplierText(newLuck);
         this.participants.set(login, participant);
         
-        io.emit('participant:update', participant);
-        console.log(`✅ Updated luck for ${login}: ${participant.multiplierText}`);
+        emitToUser(userId, 'participant:update', participant);
       }
     }
   }
@@ -1087,180 +1008,121 @@ class GiveawayManager {
   }
 }
 
-const giveaway = new GiveawayManager();
-
-// ===================== TMI CLIENT SETUP =====================
-let tmiClient = null;
-let botClient = null;
-let sessionRef = null;
-
-// ===================== BOT CLIENT =====================
-async function ensureBotClient() {
-  if (botClient) return botClient;
-
-  const botUsername = process.env.BOT_USERNAME;
-  const botToken = process.env.BOT_OAUTH_TOKEN || (process.env.BOT_ACCESS_TOKEN ? `oauth:${process.env.BOT_ACCESS_TOKEN}` : null);
-
-  if (!botUsername || !botToken) {
-    console.warn('⚠️ Bot credentials not configured.');
-    return null;
+// ===================== TMI CLIENT - BENUTZERSPEZIFISCH =====================
+async function ensureTmiClient(sessionData, userId) {
+  const userSession = getUserSession(userId);
+  
+  if (userSession.tmiClient) return userSession.tmiClient;
+  
+  if (!sessionData?.twitch?.access_token || !sessionData?.user?.login) {
+    throw new Error('Missing token or login');
   }
 
-  botClient = new tmi.Client({
-    options: { debug: true, skipUpdatingEmoteMode: true, skipMembership: true },
-    connection: { reconnect: true, secure: true },
-    identity: { username: botUsername, password: botToken },
+  // Lade Badge- und Emote-Daten für diesen Benutzer
+  await loadGlobalBadges(sessionData.twitch.access_token);
+  await loadGlobalEmotes(sessionData.twitch.access_token);
+  await loadBTTVEmotes();
+  await loadFFZEmotes();
+  
+  if (sessionData.user.id) {
+    await loadChannelBadges(sessionData.user.id, sessionData.twitch.access_token, userId);
+    await loadChannelEmotes(sessionData.user.id, sessionData.twitch.access_token, userId);
+    await loadBTTVEmotes(sessionData.user.id);
+    await loadFFZEmotes(sessionData.user.id);
+  }
+
+  userSession.tmiClient = new tmi.Client({
+    options: { 
+      debug: false,
+      skipUpdatingEmotesets: false,
+      skipMembership: false
+    },
+    connection: { 
+      reconnect: true, 
+      secure: true,
+      maxReconnectAttempts: 3
+    },
+    identity: { 
+      username: sessionData.user.login, 
+      password: 'oauth:' + sessionData.twitch.access_token 
+    },
     channels: []
   });
 
-  botClient.on('connected', () => console.log(`✅ Bot client connected as: ${botUsername}`));
-  botClient.on('disconnected', (reason) => { console.log(`🔌 Bot client disconnected: ${reason}`); botClient = null; });
-
-  try {
-    await botClient.connect();
-    return botClient;
-  } catch (error) {
-    console.error('❌ Failed to initialize bot client:', error.message);
-    botClient = null;
-    return null;
-  }
-}
-
-// ===================== KORRIGIERTE TMI CLIENT =====================
-async function ensureTmiClient(session) {
-  if (tmiClient) return tmiClient;
-  if (!session?.twitch?.access_token || !session?.user?.login) throw new Error('Missing token or login');
-
-  sessionRef = session;
-
-// Lade alle Badge- und Emote-Daten
-await loadGlobalBadges(session.twitch.access_token);
-if (typeof loadAdditionalBadgeSets === 'function') {
-  await loadAdditionalBadgeSets(session.twitch.access_token);
-}
-await loadGlobalEmotes(session.twitch.access_token);
-await loadBTTVEmotes();
-await loadFFZEmotes();
-  
-  if (session.user.id) {
-    await loadChannelBadges(session.user.id, session.twitch.access_token);
-    await loadChannelEmotes(session.user.id, session.twitch.access_token);
-    await loadBTTVEmotes(session.user.id);
-    await loadFFZEmotes(session.user.id);
+  // Track kürzlich gesendete Website-Nachrichten für diesen Benutzer
+  if (!global.recentWebsiteMessages) {
+    global.recentWebsiteMessages = new Map();
   }
 
-tmiClient = new tmi.Client({
-  options: { 
-    debug: false,
-    skipUpdatingEmotesets: false,  // Wichtig für Badge-Updates
-    skipMembership: false          // Wichtig für vollständige User-Infos
-  },
-  connection: { 
-    reconnect: true, 
-    secure: true,
-    maxReconnectAttempts: 3
-  },
-  identity: { 
-    username: session.user.login, 
-    password: 'oauth:' + session.twitch.access_token 
-  },
-  channels: []
-});
-
-// Track kürzlich gesendete Website-Nachrichten
-tmiClient.on('message', async (channel, tags, message, self) => {
-  // Prüfe ob diese Nachricht eine Duplikat von einer Website-Nachricht ist
-  if (self && tags.username === sessionRef?.user?.login) {
-    const messageKey = `${tags.username}_${message}`;
-    const recentMessage = global.recentWebsiteMessages?.get(messageKey);
-    
-    if (recentMessage && (Date.now() - recentMessage.timestamp) < 3000) {
-      console.log('📨 Skipping duplicate message from website that came back via Twitch');
-      return; // Skip diese Nachricht, sie wurde bereits von der Website angezeigt
+  userSession.tmiClient.on('message', async (channel, tags, message, self) => {
+    // Überprüfe ob diese Nachricht eine Duplikat von einer Website-Nachricht ist
+    if (self && tags.username === sessionData?.user?.login) {
+      const messageKey = `${userId}_${tags.username}_${message}`;
+      const recentMessage = global.recentWebsiteMessages?.get(messageKey);
+      
+      if (recentMessage && (Date.now() - recentMessage.timestamp) < 3000) {
+        return; // Skip diese Nachricht
+      }
     }
+
+    const participantUserId = tags['user-id'];
+    let profileImageUrl = null;
     
-    console.log('📨 Own message from Twitch chat (not a duplicate)');
-  }
-
-  // Debug: Zeige ALLE Badge-Daten
-  console.log('🔨 Twitch message received - FULL TAGS:', {
-    user: tags['display-name'] || tags['username'],
-    message: message,
-    badges: tags.badges,
-    badgesRaw: tags['badges-raw'],
-    badgeInfo: tags['badge-info'],
-    badgeInfoRaw: tags['badge-info-raw'],
-    userId: tags['user-id'],
-    emotes: tags.emotes,
-    isSelf: self,
-    allTags: tags  // Zeige ALLE Tags für Debug
-  });
-
-  const userId = tags['user-id'];
-  let profileImageUrl = null;
-  
-  if (userId && sessionRef?.twitch?.access_token) {
-    try {
-      profileImageUrl = await loadUserProfileImage(userId, sessionRef.twitch.access_token);
-    } catch (e) {
-      console.error('Failed to load profile image:', e);
+    if (participantUserId && sessionData?.twitch?.access_token) {
+      try {
+        profileImageUrl = await loadUserProfileImage(participantUserId, sessionData.twitch.access_token);
+      } catch (e) {
+        console.error('Failed to load profile image:', e);
+      }
     }
-  }
 
-  // KORRIGIERT: Erweiterte Emote-Parsing
-  const parsedMessage = parseEmotesExtended(message, tags.emotes);
-  const result = giveaway.tryAdd(tags, message);
+    // Parse Emotes mit Benutzer-ID
+    const parsedMessage = parseEmotesExtended(message, tags.emotes, userId);
+    const result = userSession.giveaway.tryAdd(tags, message, userId);
 
     if (result && result.type === 'spam_blocked') {
-      io.emit('participant:spam_blocked', result);
-      io.emit('stats:update', giveaway.getStats());
+      emitToUser(userId, 'participant:spam_blocked', result);
+      emitToUser(userId, 'stats:update', userSession.giveaway.getStats());
       return;
     }
 
-   // Parse Badges mit verbessertem Channel-ID Handling
-  const channelIdToUse = giveaway.channelId || sessionRef?.user?.id || null;
-  const badges = parseBadges(tags, channelIdToUse);
-  const luck = computeLuckFromTags(tags);
+    // Parse Badges mit Benutzer-ID
+    const channelIdToUse = userSession.giveaway.channelId || sessionData?.user?.id || null;
+    const badges = parseBadges(tags, userId);
+    const luck = computeLuckFromTags(tags, userId);
 
-  console.log('📛 Parsed badges for message:', {
-    user: tags['display-name'],
-    badgeCount: badges.length,
-    badges: badges.map(b => `${b.name}/${b.version}`),
-    channelId: channelIdToUse
-  });
+    const chatEvent = {
+      channel,
+      user: tags['display-name'] || tags['username'],
+      userId: tags['user-id'],
+      text: message,
+      message: parsedMessage,
+      color: tags.color || '#a78bfa',
+      badges: badges,
+      luck: luck,
+      multiplierText: getMultiplierText(luck),
+      timestamp: new Date().toISOString(),
+      isParticipant: !!result,
+      profileImageUrl: profileImageUrl,
+      isTwitchUser: true,
+      isOwnMessage: false
+    };
 
-const chatEvent = {
-  channel,
-  user: tags['display-name'] || tags['username'],
-  userId: tags['user-id'],
-  text: message,
-  message: parsedMessage,
-  color: tags.color || '#a78bfa',
-  badges: badges,
-  luck: luck,
-  multiplierText: getMultiplierText(luck),
-  timestamp: new Date().toISOString(),
-  isParticipant: !!result,
-  profileImageUrl: profileImageUrl,
-  isTwitchUser: true,
-  isOwnMessage: false  // Zeige ALLE Nachrichten an, keine Duplikate filtern
-};
-
-  io.emit('chat', chatEvent);
+    emitToUser(userId, 'chat', chatEvent);
 
     if (result && typeof result === 'object' && result.login) {
       if (profileImageUrl) {
         result.profileImageUrl = profileImageUrl;
-        giveaway.participants.set(result.login, result);
+        userSession.giveaway.participants.set(result.login, result);
       }
-      io.emit('participant:add', result);
-      io.emit('stats:update', giveaway.getStats());
+      emitToUser(userId, 'participant:add', result);
+      emitToUser(userId, 'stats:update', userSession.giveaway.getStats());
     }
   });
 
-  await tmiClient.connect();
-  console.log('🔗 TMI client connected successfully');
-  return tmiClient;
+  await userSession.tmiClient.connect();
+  console.log(`✅ TMI client connected for user ${userId}`);
+  return userSession.tmiClient;
 }
 
 // ===================== AUTH ROUTES =====================
@@ -1296,6 +1158,10 @@ app.get('/auth/twitch/callback', async (req, res) => {
 });
 
 app.get('/logout', (req, res) => {
+  // Cleanup user session beim Logout
+  if (req.session?.user?.id) {
+    cleanupUserSession(req.session.user.id);
+  }
   req.session.destroy();
   res.redirect('/');
 });
@@ -1322,16 +1188,12 @@ app.get('/api/user-info/:userId', async (req, res) => {
     const userId = req.params.userId;
     const login = req.query.login;
     
-    console.log(`📊 Loading user info for userId: ${userId}, login: ${login}`);
-    
     const userInfo = await getUserInfo(userId, login, req.session.twitch.access_token);
     
     if (!userInfo) {
-      console.log(`❌ No user info found for userId: ${userId}`);
       return res.status(404).json({ error: 'User not found' });
     }
     
-    console.log(`✅ User info loaded successfully:`, userInfo);
     res.json(userInfo);
   } catch (e) {
     console.error('❌ User info API error:', e);
@@ -1339,35 +1201,43 @@ app.get('/api/user-info/:userId', async (req, res) => {
   }
 });
 
-// ===================== GIVEAWAY API =====================
+// ===================== GIVEAWAY API - BENUTZERSPEZIFISCH =====================
 app.post('/api/giveaway/start', async (req, res) => {
   try {
     if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
 
+    const userId = req.session.user.id;
+    const userSession = getUserSession(userId);
+    
     const ch = req.session.user.login.toLowerCase();
     const channelId = req.session.user.id;
-    const keyword = req.body?.keyword || giveaway.keyword;
+    const keyword = req.body?.keyword || userSession.giveaway.keyword;
     const duration = parseInt(req.body?.duration || 0);
     const subsOnly = Boolean(req.body?.subsOnly);
     const autoJoinHost = Boolean(req.body?.autoJoinHost);
 
-    console.log('🚀 Starting giveaway with autoJoinHost:', autoJoinHost);
-
     if (keyword) {
-      giveaway.keyword = String(keyword).toLowerCase();
+      userSession.giveaway.keyword = String(keyword).toLowerCase();
     }
 
-    giveaway.start({ channel: ch, channelId, hostLogin: ch, duration, subsOnly, autoJoinHost });
+    userSession.giveaway.start({ channel: ch, channelId, hostLogin: ch, duration, subsOnly, autoJoinHost });
 
-    const client = await ensureTmiClient(req.session);
+    const client = await ensureTmiClient(req.session, userId);
     if (!client.getChannels().includes('#' + ch)) await client.join(ch);
 
-    io.emit('giveaway:status', { state: giveaway.state, keyword: giveaway.keyword, channel: ch, duration, subsOnly, autoJoinHost });
+    emitToUser(userId, 'giveaway:status', { 
+      state: userSession.giveaway.state, 
+      keyword: userSession.giveaway.keyword, 
+      channel: ch, 
+      duration, 
+      subsOnly, 
+      autoJoinHost 
+    });
 
     if (autoJoinHost) {
-      const hostParticipant = giveaway.participants.get(ch);
+      const hostParticipant = userSession.giveaway.participants.get(ch);
       if (hostParticipant) {
-        io.emit('host:auto_joined', hostParticipant);
+        emitToUser(userId, 'host:auto_joined', hostParticipant);
       }
     }
 
@@ -1379,184 +1249,229 @@ app.post('/api/giveaway/start', async (req, res) => {
 });
 
 app.post('/api/giveaway/pause', (req, res) => {
-  if (giveaway.state !== 'collect') return res.status(400).json({ error: 'not_running' });
-  giveaway.lock();
-  io.emit('giveaway:status', { state: giveaway.state });
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
+  
+  if (userSession.giveaway.state !== 'collect') return res.status(400).json({ error: 'not_running' });
+  
+  userSession.giveaway.lock();
+  emitToUser(userId, 'giveaway:status', { state: userSession.giveaway.state });
   res.json({ ok: true });
 });
 
 app.post('/api/giveaway/resume', (req, res) => {
-  if (giveaway.state !== 'locked') return res.status(400).json({ error: 'not_paused' });
-  giveaway.resume();
-  io.emit('giveaway:status', { state: giveaway.state });
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
+  
+  if (userSession.giveaway.state !== 'locked') return res.status(400).json({ error: 'not_paused' });
+  
+  userSession.giveaway.resume();
+  emitToUser(userId, 'giveaway:status', { state: userSession.giveaway.state });
   res.json({ ok: true });
 });
 
 app.post('/api/giveaway/end', (req, res) => {
-  if (giveaway.state === 'idle') return res.status(400).json({ error: 'not_running' });
-  giveaway.lock();
-  const winner = giveaway.draw();
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
+  
+  if (userSession.giveaway.state === 'idle') return res.status(400).json({ error: 'not_running' });
+  
+  userSession.giveaway.lock();
+  const winner = userSession.giveaway.draw();
+  
   if (!winner) {
-    giveaway.stop();
-    io.emit('giveaway:status', { state: giveaway.state });
+    userSession.giveaway.stop();
+    emitToUser(userId, 'giveaway:status', { state: userSession.giveaway.state });
     return res.status(400).json({ error: 'no_participants' });
   }
-  io.emit('giveaway:winner', winner);
-  giveaway.stop();
-  io.emit('participants:cleared');
-  io.emit('giveaway:status', { state: giveaway.state });
-  io.emit('stats:update', giveaway.getStats());
+  
+  emitToUser(userId, 'giveaway:winner', winner);
+  userSession.giveaway.stop();
+  emitToUser(userId, 'participants:cleared');
+  emitToUser(userId, 'giveaway:status', { state: userSession.giveaway.state });
+  emitToUser(userId, 'stats:update', userSession.giveaway.getStats());
   res.json({ winner });
 });
 
-// ===================== GIVEAWAY CONTROL ENDPOINTS =====================
-app.get('/api/giveaway/status', (req,res) => res.json({ 
-  state: giveaway.state, 
-  keyword: giveaway.keyword, 
-  channel: giveaway.channel,
-  duration: giveaway.duration,
-  subsOnly: giveaway.subsOnly,
-  autoJoinHost: giveaway.autoJoinHost
-}));
-
-app.post('/api/giveaway/stop', (req, res) => {
-  giveaway.stop();
-  io.emit('giveaway:status', { state: giveaway.state });
-  io.emit('participants:cleared');
-  io.emit('stats:update', giveaway.getStats());
-  res.json({ ok:true });
+app.get('/api/giveaway/status', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
+  
+  res.json({ 
+    state: userSession.giveaway.state, 
+    keyword: userSession.giveaway.keyword, 
+    channel: userSession.giveaway.channel,
+    duration: userSession.giveaway.duration,
+    subsOnly: userSession.giveaway.subsOnly,
+    autoJoinHost: userSession.generalSettings.autoJoinHost
+  });
 });
 
-app.delete('/api/giveaway/participants/:login', (req,res) => {
-  const login = String(req.params.login||'').toLowerCase();
-  console.log(`🗑️ API request to remove participant: ${login}`);
+app.post('/api/giveaway/stop', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
   
-  if(giveaway.participants.delete(login)){
-    console.log(`✅ Participant ${login} removed from giveaway`);
-    io.emit('participant:remove', { login });
-    io.emit('stats:update', giveaway.getStats());
-    return res.json({ ok:true, message: `Participant ${login} removed` });
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
+  
+  userSession.giveaway.stop();
+  emitToUser(userId, 'giveaway:status', { state: userSession.giveaway.state });
+  emitToUser(userId, 'participants:cleared');
+  emitToUser(userId, 'stats:update', userSession.giveaway.getStats());
+  res.json({ ok: true });
+});
+
+app.delete('/api/giveaway/participants/:login', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
+  const login = String(req.params.login || '').toLowerCase();
+  
+  if (userSession.giveaway.participants.delete(login)) {
+    emitToUser(userId, 'participant:remove', { login });
+    emitToUser(userId, 'stats:update', userSession.giveaway.getStats());
+    return res.json({ ok: true, message: `Participant ${login} removed` });
   }
   
-  console.log(`❌ Participant ${login} not found`);
-  res.status(404).json({ error:'not_found', message: `Participant ${login} not found` });
+  res.status(404).json({ error: 'not_found', message: `Participant ${login} not found` });
 });
 
 app.get('/api/giveaway/participants', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
+  
   res.json({ 
-    participants: Array.from(giveaway.participants.values()),
-    blocked: giveaway.blockedUsers.size,
-    spamBlocked: giveaway.spamBlockedUsers.size
+    participants: Array.from(userSession.giveaway.participants.values()),
+    blocked: userSession.giveaway.blockedUsers.size,
+    spamBlocked: userSession.giveaway.spamBlockedUsers.size
   });
 });
 
-// ===================== SETTINGS API =====================
-app.get('/api/settings/luck', (req,res) => res.json(luckSettings));
-app.put('/api/settings/luck', (req,res) => {
+// ===================== SETTINGS API - BENUTZERSPEZIFISCH =====================
+app.get('/api/settings/luck', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
+  
+  res.json(userSession.luckSettings);
+});
+
+app.put('/api/settings/luck', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
   const { enabled, bits, subs } = req.body || {};
   
-  console.log('💾 Updating luck settings:', req.body);
-  
-  if(typeof enabled === 'boolean') luckSettings.enabled = enabled;
-  if(Array.isArray(bits)) {
+  if (typeof enabled === 'boolean') userSession.luckSettings.enabled = enabled;
+  if (Array.isArray(bits)) {
     const validBits = bits.filter(b => typeof b.min === 'number' && typeof b.mult === 'number');
-    luckSettings.bits = validBits.sort((a, b) => a.min - b.min);
+    userSession.luckSettings.bits = validBits.sort((a, b) => a.min - b.min);
   }
-  if(Array.isArray(subs)) {
+  if (Array.isArray(subs)) {
     const validSubs = subs.filter(s => typeof s.min === 'number' && typeof s.mult === 'number');
-    luckSettings.subs = validSubs.sort((a, b) => a.min - b.min);
+    userSession.luckSettings.subs = validSubs.sort((a, b) => a.min - b.min);
   }
   
-  giveaway.updateParticipantsLuck();
+  userSession.giveaway.updateParticipantsLuck(userId);
   
-  io.emit('settings:luck_updated', luckSettings);
-  res.json({ ok:true, luckSettings });
+  emitToUser(userId, 'settings:luck_updated', userSession.luckSettings);
+  res.json({ ok: true, luckSettings: userSession.luckSettings });
 });
 
-app.get('/api/settings/general', (req,res) => res.json(generalSettings));
-app.put('/api/settings/general', (req,res) => {
+app.get('/api/settings/general', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
+  
+  res.json(userSession.generalSettings);
+});
+
+app.put('/api/settings/general', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
   const { autoJoinHost, antispam } = req.body || {};
   
-  console.log('⚙️ Updating general settings:', req.body);
+  if (typeof autoJoinHost === 'boolean') userSession.generalSettings.autoJoinHost = autoJoinHost;
+  if (typeof antispam === 'boolean') userSession.generalSettings.antispam = antispam;
   
-  if(typeof autoJoinHost === 'boolean') generalSettings.autoJoinHost = autoJoinHost;
-  if(typeof antispam === 'boolean') generalSettings.antispam = antispam;
-  
-  io.emit('settings:general_updated', generalSettings);
-  res.json({ ok:true, generalSettings });
+  emitToUser(userId, 'settings:general_updated', userSession.generalSettings);
+  res.json({ ok: true, generalSettings: userSession.generalSettings });
 });
 
-app.get('/api/settings/keyword', (req,res) => res.json({ 
-  keyword: giveaway.keyword,
-  duration: giveaway.duration 
-}));
-
-app.put('/api/settings/keyword', (req,res) => {
-  const kw = (req.body?.keyword || '').toString().trim();
-  if(!kw || !kw.startsWith('!')) return res.status(400).json({ error: 'invalid_keyword' });
-  giveaway.keyword = kw.toLowerCase();
-  io.emit('giveaway:status', { 
-    state: giveaway.state, 
-    keyword: giveaway.keyword, 
-    channel: giveaway.channel 
+app.get('/api/settings/keyword', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
+  
+  res.json({ 
+    keyword: userSession.giveaway.keyword,
+    duration: userSession.giveaway.duration 
   });
-  res.json({ ok:true, keyword: giveaway.keyword });
 });
 
-// ===================== KORRIGIERTE CHAT ENDPOINTS =====================
-app.post('/api/chat/send', async (req,res) => {
+app.put('/api/settings/keyword', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
+  const kw = (req.body?.keyword || '').toString().trim();
+  
+  if (!kw || !kw.startsWith('!')) return res.status(400).json({ error: 'invalid_keyword' });
+  
+  userSession.giveaway.keyword = kw.toLowerCase();
+  emitToUser(userId, 'giveaway:status', { 
+    state: userSession.giveaway.state, 
+    keyword: userSession.giveaway.keyword, 
+    channel: userSession.giveaway.channel 
+  });
+  res.json({ ok: true, keyword: userSession.giveaway.keyword });
+});
+
+// ===================== CHAT ENDPOINTS - BENUTZERSPEZIFISCH =====================
+app.post('/api/chat/send', async (req, res) => {
   try {
-    if(!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+    if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+    
+    const userId = req.session.user.id;
+    const userSession = getUserSession(userId);
     const text = (req.body?.text || '').toString();
-    if(!text.trim()) return res.status(400).json({ error: 'empty' });
+    
+    if (!text.trim()) return res.status(400).json({ error: 'empty' });
     
     const currentUser = req.session.user;
-    const ch = (giveaway.channel || currentUser.login).toLowerCase();
-    const client = await ensureTmiClient(req.session);
-    if(!client.getChannels().includes('#' + ch)) await client.join(ch);
-
-    // Hole die echten Badges des Users von Twitch
-    let userBadges = '';
-    let userBadgeInfo = '';
+    const ch = (userSession.giveaway.channel || currentUser.login).toLowerCase();
+    const client = await ensureTmiClient(req.session, userId);
     
-    try {
-      // Hole User Channel Info für Badges
-      const channelResponse = await axios.get(`${TWITCH_API}/chat/settings`, {
-        headers: {
-          'Client-Id': process.env.TWITCH_CLIENT_ID,
-          'Authorization': `Bearer ${req.session.twitch.access_token}`
-        },
-        params: {
-          broadcaster_id: currentUser.id,
-          moderator_id: currentUser.id
-        }
-      });
-      
-      // Setze Broadcaster Badge wenn es der Channel Owner ist
-      if (ch === currentUser.login.toLowerCase()) {
-        userBadges = 'broadcaster/1';
-      }
-    } catch (e) {
-      console.log('Could not fetch user badges, using default');
-      if (ch === currentUser.login.toLowerCase()) {
-        userBadges = 'broadcaster/1';
-      }
-    }
+    if (!client.getChannels().includes('#' + ch)) await client.join(ch);
 
     const simulatedTags = {
       'username': currentUser.login,
       'display-name': currentUser.display_name || currentUser.login,
       'user-id': currentUser.id,
       'color': currentUser.color || '#a970ff',
-      'badges': userBadges,
-      'badge-info': userBadgeInfo,
+      'badges': ch === currentUser.login.toLowerCase() ? 'broadcaster/1' : '',
+      'badge-info': '',
       'emotes': null
     };
     
-    console.log('📤 Sending message as:', simulatedTags['display-name'], 'ID:', simulatedTags['user-id']);
-    
-// Track diese Nachricht um Duplikate zu verhindern
-    const messageKey = `${currentUser.login}_${text}`;
+    // Track diese Nachricht um Duplikate zu verhindern
+    const messageKey = `${userId}_${currentUser.login}_${text}`;
     if (!global.recentWebsiteMessages) {
       global.recentWebsiteMessages = new Map();
     }
@@ -1570,14 +1485,14 @@ app.post('/api/chat/send', async (req,res) => {
       global.recentWebsiteMessages.delete(messageKey);
     }, 3000);
 
-    const participant = giveaway.tryAdd(simulatedTags, text);
+    const participant = userSession.giveaway.tryAdd(simulatedTags, text, userId);
     await client.say(ch, text);
 
-    const badges = parseBadges(simulatedTags, giveaway.channelId);
-    const luck = computeLuckFromTags(simulatedTags);
+    const badges = parseBadges(simulatedTags, userId);
+    const luck = computeLuckFromTags(simulatedTags, userId);
 
-    // KORRIGIERT: Erweiterte Emote-Parsing auch für Website-Nachrichten
-    const parsedMessage = parseEmotesExtended(text, null);
+    // Parse Emotes auch für Website-Nachrichten
+    const parsedMessage = parseEmotesExtended(text, null, userId);
 
     const chatEvent = {
       channel: ch,
@@ -1593,39 +1508,44 @@ app.post('/api/chat/send', async (req,res) => {
       isParticipant: !!participant,
       profileImageUrl: currentUser.profile_image_url,
       isSimulated: true,
-      isTwitchUser: true
+      isTwitchUser: true,
+      isWebsiteMessage: true,
+      messageId: `web_${Date.now()}_${Math.random()}`
     };
-
-// Markiere diese Nachricht als von der Website gesendet
-    chatEvent.isWebsiteMessage = true;
-    chatEvent.messageId = `web_${Date.now()}_${Math.random()}`;
     
-    io.emit('chat', chatEvent);
+    emitToUser(userId, 'chat', chatEvent);
+    
     if (participant) {
       if (currentUser.profile_image_url) {
         participant.profileImageUrl = currentUser.profile_image_url;
-        giveaway.participants.set(participant.login, participant);
+        userSession.giveaway.participants.set(participant.login, participant);
       }
-      io.emit('participant:add', participant);
-      io.emit('stats:update', giveaway.getStats());
+      emitToUser(userId, 'participant:add', participant);
+      emitToUser(userId, 'stats:update', userSession.giveaway.getStats());
     }
 
-    res.json({ ok:true });
-  } catch(e) {
+    res.json({ ok: true });
+  } catch (e) {
     console.error('❌ Chat send error:', e?.message);
-    res.status(500).json({ error:'send_failed' });
+    res.status(500).json({ error: 'send_failed' });
   }
 });
 
-app.post('/api/chat/connect', async (req,res) => {
+app.post('/api/chat/connect', async (req, res) => {
   try {
-    const client = await ensureTmiClient(req.session);
-    const ch = (giveaway.channel || req.session?.user?.login || '').toLowerCase();
-    if(ch && !client.getChannels().includes('#' + ch)) {
+    if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+    
+    const userId = req.session.user.id;
+    const userSession = getUserSession(userId);
+    const client = await ensureTmiClient(req.session, userId);
+    const ch = (userSession.giveaway.channel || req.session?.user?.login || '').toLowerCase();
+    
+    if (ch && !client.getChannels().includes('#' + ch)) {
       await client.join(ch);
     }
-    res.json({ ok:true, channel: ch, connected: true });
-  } catch(e) {
+    
+    res.json({ ok: true, channel: ch, connected: true });
+  } catch (e) {
     console.error('❌ Chat connect failed:', e?.message);
     res.status(500).json({ error: 'connect_failed', message: e?.message });
   }
@@ -1646,51 +1566,82 @@ app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
-// ===================== SOCKET.IO EVENTS =====================
+// ===================== ENHANCED SOCKET.IO EVENTS =====================
 io.on('connection', (socket) => {
-  console.log('🔌 Client connected');
+  console.log('🔌 Client connected:', socket.id);
   
-  const currentStatus = giveaway.getStatus();
-  socket.emit('giveaway:status', { 
-    state: giveaway.state, 
-    keyword: giveaway.keyword, 
-    channel: giveaway.channel,
-    duration: giveaway.duration,
-    subsOnly: giveaway.subsOnly,
-    autoJoinHost: giveaway.autoJoinHost
+  socket.on('connect', () => {
+    socket.emit('status', 'ok');
   });
   
-  socket.emit('stats:update', giveaway.getStats());
+  socket.on('reconnect', () => {
+    socket.emit('status', 'ok');
+  });
   
-  const participants = Array.from(giveaway.participants.values());
-  if (participants.length > 0) {
-    console.log(`📤 Sending ${participants.length} participants to new client`);
-    participants.forEach(participant => {
-      socket.emit('participant:add', participant);
-    });
-  }
-  
-  socket.on('settings:updated', (settings) => {
-    console.log('🔥 Received settings update from client:', settings);
-    
-    if (settings.luck) {
-      luckSettings = { ...luckSettings, ...settings.luck };
-      giveaway.updateParticipantsLuck();
-    }
-    
-    if (settings.general) {
-      generalSettings = { ...generalSettings, ...settings.general };
-    }
+  socket.on('reconnect_attempt', () => {
+    socket.emit('status', 'warn');
   });
   
   socket.on('disconnect', () => {
-    console.log('🔌 Client disconnected');
+    const userId = socketUserMap.get(socket.id);
+    if (userId) {
+      const userSession = getUserSession(userId);
+      userSession.socketIds.delete(socket.id);
+      
+      // Wenn der Benutzer keine aktiven Sockets mehr hat, Session nach Timeout cleanup
+      if (userSession.socketIds.size === 0) {
+        setTimeout(() => {
+          const session = getUserSession(userId);
+          if (session.socketIds.size === 0) {
+            cleanupUserSession(userId);
+          }
+        }, 5 * 60 * 1000); // 5 Minuten Timeout
+      }
+      
+      socketUserMap.delete(socket.id);
+      console.log(`🔌 Socket ${socket.id} disconnected for user ${userId}`);
+    }
+    socket.emit('status', 'err');
+  });
+  
+  socket.on('connect_error', () => {
+    socket.emit('status', 'err');
+  });
+  
+  // Auth Event um Benutzer zu identifizieren
+  socket.on('auth', (userId) => {
+    if (userId) {
+      socketUserMap.set(socket.id, userId);
+      const userSession = getUserSession(userId);
+      userSession.socketIds.add(socket.id);
+      
+      // Sende aktuelle Daten nur an diesen Benutzer
+      sendUserSpecificData(socket, userId);
+      console.log(`✅ Socket ${socket.id} authenticated for user ${userId}`);
+    }
+  });
+  
+  socket.on('settings:updated', (settings) => {
+    const userId = socketUserMap.get(socket.id);
+    if (!userId) return;
+    
+    const userSession = getUserSession(userId);
+    
+    if (settings.luck) {
+      userSession.luckSettings = { ...userSession.luckSettings, ...settings.luck };
+      userSession.giveaway.updateParticipantsLuck(userId);
+    }
+    
+    if (settings.general) {
+      userSession.generalSettings = { ...userSession.generalSettings, ...settings.general };
+    }
   });
 });
 
 // ===================== SERVER START =====================
 const port = process.env.PORT || 3000;
 server.listen(port, () => {
-  console.log(`🎬 ZinxyBot server running on http://localhost:${port}`);
-  console.log('🎯 Ready for giveaways with enhanced emotes and badges!');
+  console.log(`🏆 ZinxyBot server running on http://localhost:${port}`);
+  console.log('🎯 Ready for user-specific giveaways with enhanced emotes and badges!');
+  console.log('✅ Each user now has their own isolated session and data');
 });
