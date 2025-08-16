@@ -353,10 +353,13 @@
               <img id="winnerAvatar" class="winner-avatar" src="" alt="Winner avatar" />
               <div id="winnerAvatarFallback" class="winner-avatar-fallback" style="display: none;"></div>
             </div>
-            <div class="winner-details">
-              <div id="winnerName" class="winner-name"></div>
-              <div id="winnerLuck" class="winner-luck"></div>
-            </div>
+           <div class="winner-details">
+  <div class="winner-name-line">
+    <div id="winnerName" class="winner-name"></div>
+    <span id="winner-timer" class="winner-timer">00:00</span>
+  </div>
+  <div id="winnerLuck" class="winner-luck"></div>
+</div>
           </div>
           
           <div class="winner-account-info">
@@ -410,7 +413,7 @@
     <div id="error-announcements" aria-live="assertive" aria-atomic="true"></div>
   </div>
 
-  <footer class="footer">© 2025 zinxybot.net - All rights reserved.</footer>
+  <footer class="footer"> 2025 zinxybot.net - All rights reserved.</footer>
   
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
@@ -443,6 +446,21 @@
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
       }
+    }
+
+    .winner-name-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      width: 100%;
+    }
+
+    .winner-timer {
+      font-size: 0.9em;
+      color: var(--text-muted);
+      font-weight: 500;
+      margin-left: 1rem;
+      flex-shrink: 0;
     }
   </style>
 </body>
