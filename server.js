@@ -501,17 +501,17 @@ function getBadgeData(badgeSet, version, channelId = null) {
 }
 
 
-const data = getBadgeUrl(badge, version, channelId);
-if (data) {
-  badges.push(`
-    <img src="${data.url}" 
-         srcset="${data.url_2x} 2x, ${data.url_4x} 4x"
-         alt="${badge} badge" 
-         title="${data.title}" 
-         class="chat-badge badge-${badge}">
-  `);
-}
+function getBadgeUrl(badge, version, channelId) {
+  const data = getBadgeData(badge, version, channelId);
+  if (!data) return null;
 
+  return {
+    url: data.url_1x,
+    url_2x: data.url_2x,
+    url_4x: data.url_4x,
+    title: data.title || badge
+  };
+}
 
 
 // Neue Hilfsfunktion für Fallback Badge URLs
@@ -1294,7 +1294,6 @@ app.get('/auth/twitch/callback', async (req, res) => {
     res.status(500).send('OAuth error.');
   }
 });
-
 
 app.get('/logout', (req, res) => {
   req.session.destroy();
