@@ -1477,16 +1477,18 @@ async function showWinnerModal(winner) {
     return t.content.firstElementChild;
   }
 
-  function renderBadges(badges) {
-    if (!badges || badges.length === 0) return '';
-    
-    return badges.map(badge => {
-      if (badge.url) {
-        return `<img src="${badge.url}" alt="${badge.title}" title="${badge.title}" class="chat-badge">`;
-      }
-      return '';
-    }).join('');
-  }
+function renderBadges(badges) {
+  if (!badges || badges.length === 0) return '';
+  
+  return badges.map(badge => {
+    if (badge.url) {
+      // Verwende höhere Auflösung wenn verfügbar
+      const imageUrl = badge.url_2x || badge.url;
+      return `<img src="${imageUrl}" alt="${badge.title || badge.name}" title="${badge.title || badge.name}" class="chat-badge" onerror="this.src='${badge.url}'">`;
+    }
+    return '';
+  }).join('');
+}
 
   // KORRIGIERTE renderParticipant Funktion - OHNE Animation beim ersten Laden
   function renderParticipant(p) {
@@ -1643,15 +1645,53 @@ async function showWinnerModal(winner) {
     }
   });
 
-  socket.on('chat', (ev) => {
-    if (!elements.chatList) return;
+// Track angezeigte Nachrichten um Duplikate zu verhindern
+const displayedMessages = new Map();
+
+socket.on('chat', (ev) => {
+  if (!elements.chatList) return;
+  
+  // Erstelle einen eindeutigen Key für diese Nachricht
+  const messageKey = `${ev.user}_${ev.text}_${ev.timestamp}`;
+  
+  // Prüfe auf Duplikate innerhalb von 2 Sekunden
+  if (!ev.isWebsiteMessage) {
+    const existing = Array.from(displayedMessages.entries()).find(([key, data]) => {
+      return data.user === ev.user && 
+             data.text === ev.text && 
+             (Date.now() - data.timestamp) < 2000;
+    });
     
-    const msg = (ev?.message ?? ev?.text ?? '').toString();
-    const name = ev?.user || 'User';
-    const color = ev?.color || '#a2a2ad';
-    const badges = renderBadges(ev.badges || []);
-    const multiplierText = (ev.luck && ev.luck > 1) ? `${ev.luck.toFixed(2)}x` : '';
-    const isParticipant = ev.isParticipant || false;
+    if (existing) {
+      console.log('📨 Skipping duplicate message:', ev.user, ev.text);
+      return;
+    }
+  }
+  
+  // Speichere diese Nachricht
+  displayedMessages.set(messageKey, {
+    user: ev.user,
+    text: ev.text,
+    timestamp: Date.now()
+  });
+  
+  // Lösche alte Einträge nach 3 Sekunden
+  setTimeout(() => {
+    displayedMessages.delete(messageKey);
+  }, 3000);
+  
+  const msg = (ev?.message ?? ev?.text ?? '').toString();
+  const name = ev?.user || 'User';
+  const color = ev?.color || '#a2a2ad';
+  const badges = renderBadges(ev.badges || []);
+  const multiplierText = (ev.luck && ev.luck > 1) ? `${ev.luck.toFixed(2)}x` : '';
+  const isParticipant = ev.isParticipant || false;
+  
+  console.log('💬 Displaying chat message:', {
+    user: name,
+    badgeCount: (ev.badges || []).length,
+    badges: (ev.badges || []).map(b => b.name)
+  });
     
     const empty = elements.chatList.querySelector('.empty');
     if (empty) empty.remove();
