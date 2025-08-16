@@ -1,5 +1,5 @@
 // ---- Enhanced Dashboard Bootstrapping - KORRIGIERT ----
-// DATEI: app.js - Korrigiert für besseres State Management und Winner Info
+// DATEI: app.js - Korrigiert fÃ¼r besseres State Management und Winner Info
 
 document.addEventListener('DOMContentLoaded', () => { 
   // Initialize Lucide icons first
@@ -37,11 +37,13 @@ async function boot() {
       subsOnly: localStorage.getItem('giveaway_subs_only') === 'true',
       autoJoinHost: localStorage.getItem('giveaway_auto_join_host') !== 'false'
     },
-    winner: {
-      currentWinner: null,
-      messagesAfterWin: [],
-      winTime: null
-    }
+
+  winner: {
+  currentWinner: null,
+  messagesAfterWin: [],
+  winTime: null,
+  timerInterval: null
+}
   };
 
   // Header elements
@@ -132,7 +134,7 @@ async function boot() {
       }, 1000);
       
       this.updateDisplay();
-      console.log(`⏰ Timer started for ${durationMinutes} minutes`);
+      console.log(`â° Timer started for ${durationMinutes} minutes`);
     },
     
     stop() {
@@ -146,11 +148,11 @@ async function boot() {
     },
     
     pause() {
-      console.log('⏸️ Timer paused at:', this.formatTime(AppState.giveaway.timeRemaining));
+      console.log('â¸ï¸ Timer paused at:', this.formatTime(AppState.giveaway.timeRemaining));
     },
     
     resume() {
-      console.log('▶️ Timer resumed at:', this.formatTime(AppState.giveaway.timeRemaining));
+      console.log('â–¶ï¸ Timer resumed at:', this.formatTime(AppState.giveaway.timeRemaining));
     },
     
     updateDisplay() {
@@ -176,7 +178,7 @@ async function boot() {
     },
     
     onTimerEnd() {
-      console.log('⏰ Timer ended - Auto-picking winner');
+      console.log('â° Timer ended - Auto-picking winner');
       this.stop();
       StateManager.updateStatus('INACTIVE');
       
@@ -196,7 +198,7 @@ async function boot() {
       const oldStatus = AppState.giveaway.status;
       AppState.giveaway.status = newStatus;
       
-      console.log(`📊 Status changed: ${oldStatus} → ${newStatus}`, data);
+      console.log(`ðŸ“Š Status changed: ${oldStatus} â†’ ${newStatus}`, data);
       
       this.updateStatusDisplay();
       this.updateButtonStates();
@@ -372,14 +374,14 @@ async function boot() {
     showResetConfirmation() {
       if (elements.resetConfirmToast) {
         elements.resetConfirmToast.classList.add('show');
-        console.log('⚠️ Reset confirmation shown');
+        console.log('âš ï¸ Reset confirmation shown');
       }
     },
     
     hideResetConfirmation() {
       if (elements.resetConfirmToast) {
         elements.resetConfirmToast.classList.remove('show');
-        console.log('⚠️ Reset confirmation hidden');
+        console.log('âš ï¸ Reset confirmation hidden');
       }
     },
     
@@ -407,7 +409,7 @@ async function boot() {
     }
   };
 
-  // Settings Management System - VOLLSTÄNDIG IMPLEMENTIERT
+  // Settings Management System - VOLLSTÃ„NDIG IMPLEMENTIERT
   const SettingsManager = {
     currentSettings: {
       luck: {
@@ -516,7 +518,7 @@ async function boot() {
             setting.mult = value;
           }
           
-          console.log('🎛️ Slider updated (not saved):', minValue, 'bits →', value + 'x');
+          console.log('ðŸŽ›ï¸ Slider updated (not saved):', minValue, 'bits â†’', value + 'x');
         });
       });
 
@@ -537,7 +539,7 @@ async function boot() {
             setting.mult = value;
           }
           
-          console.log('🎛️ Slider updated (not saved):', minValue, 'months →', value + 'x');
+          console.log('ðŸŽ›ï¸ Slider updated (not saved):', minValue, 'months â†’', value + 'x');
         });
       });
 
@@ -548,14 +550,14 @@ async function boot() {
       if (autoJoinCheckbox) {
         autoJoinCheckbox.addEventListener('change', (e) => {
           this.currentSettings.general.autoJoinHost = e.target.checked;
-          console.log('⚙️ Auto-join Host updated (not saved):', e.target.checked);
+          console.log('âš™ï¸ Auto-join Host updated (not saved):', e.target.checked);
         });
       }
 
       if (antispamCheckbox) {
         antispamCheckbox.addEventListener('change', (e) => {
           this.currentSettings.general.antispam = e.target.checked;
-          console.log('⚙️ Anti-spam updated (not saved):', e.target.checked);
+          console.log('âš™ï¸ Anti-spam updated (not saved):', e.target.checked);
         });
       }
 
@@ -563,7 +565,7 @@ async function boot() {
       const saveButton = document.getElementById('saveSettings');
       if (saveButton) {
         saveButton.addEventListener('click', () => {
-          console.log('💾 Save Settings clicked - applying all changes...');
+          console.log('ðŸ’¾ Save Settings clicked - applying all changes...');
           this.saveSettings();
         });
       }
@@ -584,7 +586,7 @@ async function boot() {
           lucide.createIcons(saveButton);
         }
         
-        console.log('💾 Saving all settings to server...', this.currentSettings);
+        console.log('ðŸ’¾ Saving all settings to server...', this.currentSettings);
         
         // Save Luck Settings
         const luckResponse = await fetch('/api/settings/luck', {
@@ -611,15 +613,15 @@ async function boot() {
           }
           
           UIManager.showToast('Settings saved and applied successfully!', 'success');
-          console.log('✅ All settings saved and applied:', this.currentSettings);
+          console.log('âœ… All settings saved and applied:', this.currentSettings);
           
-          // Update AppState.settings für Auto-join Host
+          // Update AppState.settings fÃ¼r Auto-join Host
           AppState.settings.autoJoinHost = this.currentSettings.general.autoJoinHost;
           
           // WICHTIG: Server wendet die Settings automatisch an alle Participants an
-          console.log('🔄 Server is now updating all participant luck multipliers...');
+          console.log('ðŸ”„ Server is now updating all participant luck multipliers...');
           
-          // Button nach 2 Sekunden zurücksetzen
+          // Button nach 2 Sekunden zurÃ¼cksetzen
           setTimeout(() => {
             if (saveButton) {
               saveButton.disabled = false;
@@ -634,7 +636,7 @@ async function boot() {
           throw new Error('Failed to save settings');
         }
       } catch (error) {
-        console.error('❌ Failed to save settings:', error);
+        console.error('âŒ Failed to save settings:', error);
         UIManager.showToast('Failed to save settings', 'error');
         
         // UI Feedback: Fehler
@@ -760,7 +762,7 @@ async function boot() {
     
     const formatted = date.toLocaleDateString('en-US', options);
     
-    // Füge "th", "st", "nd", "rd" hinzu
+    // FÃ¼ge "th", "st", "nd", "rd" hinzu
     const day = date.getDate();
     let suffix = 'th';
     
@@ -794,7 +796,7 @@ async function boot() {
   const EventHandlers = {
     async startGiveaway() {
       if (AppState.ui.isStarting || AppState.giveaway.status === 'ACTIVE') {
-        console.log('🚫 Start already in progress or giveaway active');
+        console.log('ðŸš« Start already in progress or giveaway active');
         return;
       }
       
@@ -803,7 +805,7 @@ async function boot() {
       
       try {
         const settings = SettingsManager.getStartSettings();
-        console.log('🚀 Starting giveaway with settings:', settings);
+        console.log('ðŸš€ Starting giveaway with settings:', settings);
         
         const res = await fetch('/api/giveaway/start', {
           method: 'POST',
@@ -824,7 +826,7 @@ async function boot() {
           throw new Error('Failed to start giveaway');
         }
       } catch (e) {
-        console.error('❌ Start failed:', e);
+        console.error('âŒ Start failed:', e);
         UIManager.showToast('Failed to start giveaway: ' + e.message, 'error');
       } finally {
         AppState.ui.isStarting = false;
@@ -844,11 +846,11 @@ async function boot() {
           endpoint = '/api/giveaway/resume';
           actionName = 'resume';
         } else {
-          console.log('🚫 Cannot pause/resume - giveaway not active');
+          console.log('ðŸš« Cannot pause/resume - giveaway not active');
           return;
         }
         
-        console.log(`🔄 Attempting to ${actionName} giveaway... Current status:`, AppState.giveaway.status);
+        console.log(`ðŸ”„ Attempting to ${actionName} giveaway... Current status:`, AppState.giveaway.status);
         const res = await fetch(endpoint, { 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
@@ -856,15 +858,15 @@ async function boot() {
         
         if (res.ok) {
           const data = await res.json();
-          console.log(`✅ ${actionName} request successful:`, data);
+          console.log(`âœ… ${actionName} request successful:`, data);
           UIManager.showToast(`Giveaway ${actionName}d successfully!`);
         } else {
           const errorData = await res.json().catch(() => ({}));
-          console.error(`❌ ${actionName} failed:`, res.status, errorData);
+          console.error(`âŒ ${actionName} failed:`, res.status, errorData);
           throw new Error(`Server responded with status ${res.status}: ${errorData.error || 'Unknown error'}`);
         }
       } catch (e) {
-        console.error(`❌ ${AppState.giveaway.status === 'ACTIVE' ? 'Pause' : 'Resume'} failed:`, e);
+        console.error(`âŒ ${AppState.giveaway.status === 'ACTIVE' ? 'Pause' : 'Resume'} failed:`, e);
         UIManager.showToast(`Failed to ${AppState.giveaway.status === 'ACTIVE' ? 'pause' : 'resume'} giveaway: ${e.message}`, 'error');
       }
     },
@@ -889,7 +891,7 @@ async function boot() {
           UIManager.showToast('No participants to pick from!', 'error');
         }
       } catch (e) {
-        console.error('❌ Pick winner failed:', e);
+        console.error('âŒ Pick winner failed:', e);
         UIManager.showToast('Failed to pick winner', 'error');
       } finally {
         AppState.ui.isPicking = false;
@@ -915,10 +917,10 @@ async function boot() {
         if (res.ok) {
           StateManager.updateStatus('INACTIVE');
           UIManager.showToast('Giveaway reset successfully');
-          console.log('✅ Giveaway reset completed');
+          console.log('âœ… Giveaway reset completed');
         }
       } catch (e) {
-        console.error('❌ Reset failed:', e);
+        console.error('âŒ Reset failed:', e);
         UIManager.showToast('Failed to reset giveaway', 'error');
       } finally {
         AppState.ui.isResetting = false;
@@ -927,22 +929,35 @@ async function boot() {
     
     cancelReset() {
       UIManager.hideResetConfirmation();
-      console.log('❌ Reset cancelled');
+      console.log('âŒ Reset cancelled');
     }
   };
 
   // Enhanced Winner Modal Functions
-  async function showWinnerModal(winner) {
-    const existingModal = document.querySelector('.modal--show');
-    if (existingModal) {
-      console.log('Modal already open, closing previous one');
-      existingModal.classList.remove('modal--show');
-    }
-    
-    // Set current winner for message tracking
-    AppState.winner.currentWinner = winner;
-    AppState.winner.winTime = new Date();
-    AppState.winner.messagesAfterWin = [];
+async function showWinnerModal(winner) {
+  const existingModal = document.querySelector('.modal--show');
+  if (existingModal) {
+    console.log('Modal already open, closing previous one');
+    existingModal.classList.remove('modal--show');
+  }
+  
+  // Clear any existing confetti from previous winners
+  const confettiContainer = document.getElementById('confettiContainer');
+  if (confettiContainer) {
+    confettiContainer.innerHTML = '';
+    console.log('🧹 Cleared previous confetti');
+  }
+  
+  // Set current winner for message tracking
+  AppState.winner.currentWinner = winner;
+  AppState.winner.winTime = new Date();
+  AppState.winner.messagesAfterWin = [];
+  
+  // Clear any existing timer interval
+  if (AppState.winner.timerInterval) {
+    clearInterval(AppState.winner.timerInterval);
+    AppState.winner.timerInterval = null;
+  }
     
     const modal = document.getElementById('winnerModal');
     const winnerName = document.getElementById('winnerName');
@@ -960,11 +975,11 @@ async function boot() {
       winnerAvatar.src = winner.profileImageUrl;
       winnerAvatar.style.display = 'block';
       if (winnerAvatarFallback) winnerAvatarFallback.style.display = 'none';
-      console.log('🖼️ Setting winner avatar:', winner.profileImageUrl);
+      console.log('ðŸ–¼ï¸ Setting winner avatar:', winner.profileImageUrl);
       
-      // Error handler für Bild-Ladefehler
+      // Error handler fÃ¼r Bild-Ladefehler
       winnerAvatar.onerror = () => {
-        console.log('❌ Failed to load winner avatar, using fallback');
+        console.log('âŒ Failed to load winner avatar, using fallback');
         winnerAvatar.style.display = 'none';
         if (winnerAvatarFallback) {
           winnerAvatarFallback.style.display = 'flex';
@@ -978,7 +993,7 @@ async function boot() {
         winnerAvatarFallback.style.display = 'flex';
         winnerAvatarFallback.textContent = (winner.displayName || winner.login).charAt(0).toUpperCase();
       }
-      console.log('⚠️ No profile image for winner, using fallback');
+      console.log('âš ï¸ No profile image for winner, using fallback');
     }
     
     if (winnerLuck) {
@@ -1022,13 +1037,32 @@ async function boot() {
     }
 
     modal.classList.add('modal--show');
-    createConfetti();
+  createConfetti();
+  
+  // Start timer display
+  const timerElement = document.getElementById('winner-timer');
+  if (timerElement) {
+    timerElement.textContent = '00:00';
     
-    console.log('🏆 Winner modal opened for:', winner.displayName || winner.login);
-    console.log('🎊 Modal stays open PERMANENTLY until Close button is clicked');
-    
-    // ABSOLUT KEIN Auto-Close Timer - Modal bleibt für immer offen!
+    // Update timer every second
+    AppState.winner.timerInterval = setInterval(() => {
+      if (!AppState.winner.winTime) return;
+      
+      const now = new Date();
+      const elapsed = Math.floor((now - AppState.winner.winTime) / 1000);
+      const minutes = Math.floor(elapsed / 60);
+      const seconds = elapsed % 60;
+      
+      timerElement.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }, 1000);
   }
+  
+  console.log('🎉 Winner modal opened for:', winner.displayName || winner.login);
+  console.log('🎊 Modal stays open PERMANENTLY until Close button is clicked');
+  console.log('⏱️ Timer started to track elapsed time');
+  
+  // ABSOLUT KEIN Auto-Close Timer - Modal bleibt für immer offen!
+}
 
   // Statuspoint helper
   function setStatus(cls) {
@@ -1048,27 +1082,27 @@ async function boot() {
   
   // Listen for settings updates from server
   socket.on('settings:luck_updated', (newLuckSettings) => {
-    console.log('🎯 Received updated luck settings:', newLuckSettings);
+    console.log('ðŸŽ¯ Received updated luck settings:', newLuckSettings);
     SettingsManager.currentSettings.luck = newLuckSettings;
     SettingsManager.updateSettingsUI();
   });
   
   socket.on('settings:general_updated', (newGeneralSettings) => {
-    console.log('⚙️ Received updated general settings:', newGeneralSettings);
+    console.log('âš™ï¸ Received updated general settings:', newGeneralSettings);
     SettingsManager.currentSettings.general = newGeneralSettings;
     AppState.settings.autoJoinHost = newGeneralSettings.autoJoinHost;
     SettingsManager.updateSettingsUI();
   });
   
   socket.on('giveaway:status', (status) => {
-    console.log('📡 Received giveaway status:', status);
+    console.log('ðŸ“¡ Received giveaway status:', status);
     
     const oldStatus = AppState.giveaway.status;
     
     if (status.state) {
       const newStatus = status.state === 'collect' ? 'ACTIVE' : 
                        status.state === 'locked' ? 'PAUSED' : 'INACTIVE';
-      console.log('🔄 Status update from server:', status.state, '→', newStatus, 'Old:', oldStatus);
+      console.log('ðŸ”„ Status update from server:', status.state, 'â†’', newStatus, 'Old:', oldStatus);
       
       // Status immer aktualisieren
       AppState.giveaway.status = newStatus;
@@ -1085,7 +1119,7 @@ async function boot() {
     
     // Timer NUR bei echtem Start (mit duration) neu starten
     if (status.duration !== undefined && oldStatus === 'INACTIVE') {
-      console.log('⏰ Starting new timer with duration:', status.duration);
+      console.log('â° Starting new timer with duration:', status.duration);
       if (status.duration > 0) {
         AppState.giveaway.isTimedMode = true;
         TimerManager.start(status.duration);
@@ -1097,32 +1131,32 @@ async function boot() {
     
     // Bei Resume ohne duration wird Timer einfach fortgesetzt
     if (oldStatus === 'PAUSED' && newStatus === 'ACTIVE' && !status.duration) {
-      console.log('▶️ Resume - Timer continues from:', TimerManager.formatTime(AppState.giveaway.timeRemaining));
+      console.log('â–¶ï¸ Resume - Timer continues from:', TimerManager.formatTime(AppState.giveaway.timeRemaining));
     }
   });
   
-  // KORRIGIERTE participant:add Handler - OHNE Animation beim ersten Hinzufügen
+  // KORRIGIERTE participant:add Handler - OHNE Animation beim ersten HinzufÃ¼gen
   socket.on('participant:add', (p) => {
-    console.log('➕ Participant added:', p);
+    console.log('âž• Participant added:', p);
     AppState.giveaway.entries++;
     StateManager.updateEntriesDisplay();
     StateManager.updateButtonStates();
     
     if (!elements.participantsList) return;
     
-    // Prüfen ob Participant bereits existiert (bei Refresh)
+    // PrÃ¼fen ob Participant bereits existiert (bei Refresh)
     const existingParticipant = elements.participantsList.querySelector(`[data-remove="${p.login}"]`);
     if (existingParticipant) {
-      console.log('🔄 Participant already exists, skipping:', p.login);
+      console.log('ðŸ”„ Participant already exists, skipping:', p.login);
       return;
     }
     
-    // Element wird SOFORT sichtbar hinzugefügt - KEINE Animation!
+    // Element wird SOFORT sichtbar hinzugefÃ¼gt - KEINE Animation!
     elements.participantsList.appendChild(renderParticipant(p));
     updateParticipantCount();
     checkScrollbar();
     
-    console.log('✅ Participant added without animation:', p.login);
+    console.log('âœ… Participant added without animation:', p.login);
   });
   
   socket.on('participant:remove', (data) => {
@@ -1155,9 +1189,9 @@ async function boot() {
     clearParticipantsList();
   });
 
-  // KORRIGIERTE participant:update Handler - NUR hier Animation für Updates!
+  // KORRIGIERTE participant:update Handler - NUR hier Animation fÃ¼r Updates!
   socket.on('participant:update', (participant) => {
-    console.log('🔄 Participant updated:', participant.login, 'New luck:', participant.luck);
+    console.log('ðŸ”„ Participant updated:', participant.login, 'New luck:', participant.luck);
     
     // Find and update the participant in the list
     const participantItem = elements.participantsList?.querySelector(`[data-login="${participant.login}"]`);
@@ -1196,7 +1230,7 @@ async function boot() {
           luckDisplay.style.color = 'var(--accent)';
         }, 300);
         
-        console.log(`✅ Updated luck display for ${participant.login}: ${multiplierText}`);
+        console.log(`âœ… Updated luck display for ${participant.login}: ${multiplierText}`);
       }
     }
   });
@@ -1353,7 +1387,7 @@ async function boot() {
       const confetti = document.createElement('div');
       confetti.className = 'confetti';
       confetti.style.left = Math.random() * 100 + '%';
-      confetti.style.top = '-10px'; // ✅ Startet außerhalb des sichtbaren Bereichs
+      confetti.style.top = '-10px'; // âœ… Startet auÃŸerhalb des sichtbaren Bereichs
       confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
       confetti.style.animationDelay = Math.random() * 3 + 's';
       confetti.style.animationDuration = (Math.random() * 3 + 2) + 's';
@@ -1362,9 +1396,9 @@ async function boot() {
     
     // Konfetti smooth beenden nach 5 Sekunden - kein neues Konfetti mehr
     setTimeout(() => {
-      console.log('🎊 Stopping new confetti creation');
-      // Bestehende Konfetti-Elemente natürlich zu Ende fallen lassen
-      // Aber keine neuen mehr hinzufügen
+      console.log('ðŸŽŠ Stopping new confetti creation');
+      // Bestehende Konfetti-Elemente natÃ¼rlich zu Ende fallen lassen
+      // Aber keine neuen mehr hinzufÃ¼gen
       const confettiElements = container.querySelectorAll('.confetti');
       confettiElements.forEach(element => {
         // Animation-iteration-count auf 1 setzen falls noch nicht gesetzt
@@ -1373,27 +1407,34 @@ async function boot() {
       
       // Nach weiteren 5 Sekunden alle restlichen Konfetti entfernen
       setTimeout(() => {
-        console.log('🎊 Clearing remaining confetti');
+        console.log('ðŸŽŠ Clearing remaining confetti');
         container.innerHTML = '';
       }, 5000);
     }, 5000);
   }
 
   document.getElementById('closeWinnerModal')?.addEventListener('click', () => {
-    const modal = document.getElementById('winnerModal');
-    if (modal) {
-      modal.classList.remove('modal--show');
-      console.log('🎊 Winner modal manually closed by user');
-      
-      // Konfetti beim Schließen aufräumen
-      const confettiContainer = document.getElementById('confettiContainer');
-      if (confettiContainer) {
-        confettiContainer.innerHTML = '';
-      }
-      
-      AppState.winner.currentWinner = null;
+  const modal = document.getElementById('winnerModal');
+  if (modal) {
+    modal.classList.remove('modal--show');
+    console.log('🎊 Winner modal manually closed by user');
+    
+    // Konfetti beim Schließen aufräumen
+    const confettiContainer = document.getElementById('confettiContainer');
+    if (confettiContainer) {
+      confettiContainer.innerHTML = '';
     }
-  });
+    
+    // Clear timer interval
+    if (AppState.winner.timerInterval) {
+      clearInterval(AppState.winner.timerInterval);
+      AppState.winner.timerInterval = null;
+    }
+    
+    AppState.winner.currentWinner = null;
+    AppState.winner.winTime = null;
+  }
+});
 
   function clearParticipantsList() {
     if (elements.participantsList) {
@@ -1409,7 +1450,7 @@ async function boot() {
       
       setTimeout(() => {
         StateManager.updateEntriesDisplay();
-        console.log('🗨️ Participants list cleared with animation');
+        console.log('ðŸ—¨ï¸ Participants list cleared with animation');
       }, participants.length * 50 + 200);
     }
   }
@@ -1449,7 +1490,7 @@ async function boot() {
 
   // KORRIGIERTE renderParticipant Funktion - OHNE Animation beim ersten Laden
   function renderParticipant(p) {
-    console.log('🎨 Rendering participant:', p.login, 'Luck:', p.luck);
+    console.log('ðŸŽ¨ Rendering participant:', p.login, 'Luck:', p.luck);
     const login = p.login || p.name || p.user || '';
     const display = p.displayName || p.display || login;
     const avatar = p.profileImageUrl || p.avatar || p.avatarUrl || '';
@@ -1501,7 +1542,7 @@ async function boot() {
     // KEINE Animation beim ersten Rendern!
     // Element wird sofort sichtbar ohne Fade-In
     
-    // Event Listener für Remove Button
+    // Event Listener fÃ¼r Remove Button
     const removeBtn = li.querySelector('.remove-participant-btn');
     if (removeBtn) {
       removeBtn.addEventListener('click', async (e) => {
@@ -1509,7 +1550,7 @@ async function boot() {
         e.stopPropagation();
         
         const lg = removeBtn.dataset.remove;
-        console.log('🗑️ Attempting to remove participant:', lg);
+        console.log('ðŸ—‘ï¸ Attempting to remove participant:', lg);
         
         try {
           const res = await fetch(`/api/giveaway/participants/${encodeURIComponent(lg)}`, { 
@@ -1520,7 +1561,7 @@ async function boot() {
           });
           
           if (res.ok) {
-            console.log('✅ Participant removed successfully:', lg);
+            console.log('âœ… Participant removed successfully:', lg);
             li.style.opacity = '0';
             li.style.transform = 'translateX(-20px)';
             li.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
@@ -1530,11 +1571,11 @@ async function boot() {
             }, 200);
           } else {
             const errorData = await res.json().catch(() => ({}));
-            console.error('❌ Failed to remove participant:', res.status, errorData);
+            console.error('âŒ Failed to remove participant:', res.status, errorData);
             UIManager.showToast(`Failed to remove ${lg}`, 'error');
           }
         } catch (error) {
-          console.error('❌ Error removing participant:', error);
+          console.error('âŒ Error removing participant:', error);
           UIManager.showToast(`Error removing ${lg}`, 'error');
         }
       });
@@ -1546,17 +1587,17 @@ async function boot() {
   function updateParticipantCount() {
     const allParticipants = elements.participantsList ? elements.participantsList.children.length : 0;
     
-    console.log('👥 Updating participant count:', allParticipants);
+    console.log('ðŸ‘¥ Updating participant count:', allParticipants);
     AppState.giveaway.entries = allParticipants;
     StateManager.updateEntriesDisplay();
     
     if (elements.emptyPanel && elements.participantsList) {
       if (allParticipants === 0) {
-        console.log('🔄 Showing empty panel');
+        console.log('ðŸ”„ Showing empty panel');
         elements.emptyPanel.style.display = 'flex';
         elements.participantsList.style.display = 'none';
       } else {
-        console.log('🔄 Hiding empty panel, showing participants');
+        console.log('ðŸ”„ Hiding empty panel, showing participants');
         elements.emptyPanel.style.display = 'none';
         elements.participantsList.style.display = 'flex';
         checkScrollbar();
@@ -1678,30 +1719,52 @@ async function boot() {
     observer.observe(elements.chatList, { childList: true });
   }
 
-  document.addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal-backdrop')) {
-      document.getElementById('winnerModal')?.classList.remove('modal--show');
-      AppState.winner.currentWinner = null;
-    }
-  });
-
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      const modal = document.getElementById('winnerModal');
-      if (modal && modal.classList.contains('modal--show')) {
-        modal.classList.remove('modal--show');
-        console.log('🎊 Winner modal closed by ESC key');
-        
-        // Konfetti beim Schließen aufräumen
-        const confettiContainer = document.getElementById('confettiContainer');
-        if (confettiContainer) {
-          confettiContainer.innerHTML = '';
-        }
-        
-        AppState.winner.currentWinner = null;
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('modal-backdrop')) {
+    const modal = document.getElementById('winnerModal');
+    if (modal && modal.classList.contains('modal--show')) {
+      modal.classList.remove('modal--show');
+      
+      // Konfetti beim Schließen aufräumen
+      const confettiContainer = document.getElementById('confettiContainer');
+      if (confettiContainer) {
+        confettiContainer.innerHTML = '';
       }
-      UIManager.hideResetConfirmation();
+      
+      // Clear timer interval
+      if (AppState.winner.timerInterval) {
+        clearInterval(AppState.winner.timerInterval);
+        AppState.winner.timerInterval = null;
+      }
+      
+      AppState.winner.currentWinner = null;
+      AppState.winner.winTime = null;
     }
+  }
+
+  if (e.key === 'Escape') {
+  const modal = document.getElementById('winnerModal');
+  if (modal && modal.classList.contains('modal--show')) {
+    modal.classList.remove('modal--show');
+    console.log('🎊 Winner modal closed by ESC key');
+    
+    // Konfetti beim Schließen aufräumen
+    const confettiContainer = document.getElementById('confettiContainer');
+    if (confettiContainer) {
+      confettiContainer.innerHTML = '';
+    }
+    
+    // Clear timer interval
+    if (AppState.winner.timerInterval) {
+      clearInterval(AppState.winner.timerInterval);
+      AppState.winner.timerInterval = null;
+    }
+    
+    AppState.winner.currentWinner = null;
+    AppState.winner.winTime = null;
+  }
+  UIManager.hideResetConfirmation();
+}
     
     if (e.key === ' ' && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
       e.preventDefault();
@@ -1713,7 +1776,7 @@ async function boot() {
     }
   });
 
-  console.log('🚀 Enhanced ZinxyBot Dashboard fully initialized!');
+  console.log('ðŸš€ Enhanced ZinxyBot Dashboard fully initialized!');
 }
 
 function escapeHtml(s) {
