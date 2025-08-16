@@ -248,6 +248,38 @@ async function loadGlobalBadges(accessToken) {
         'Authorization': `Bearer ${accessToken}`
       }
     });
+
+    // Lade zusätzliche Badge-Sets die möglicherweise fehlen
+async function loadAdditionalBadgeSets(accessToken) {
+  try {
+    console.log('🏷️ Loading additional badge sets...');
+    
+    // Lade Bits Badges
+    try {
+      const bitsResponse = await axios.get(`${TWITCH_API}/bits/leaderboard`, {
+        headers: {
+          'Client-Id': process.env.TWITCH_CLIENT_ID,
+          'Authorization': `Bearer ${accessToken}`
+        },
+        params: { count: 1, period: 'all' }
+      });
+      console.log('✅ Bits badge data loaded');
+    } catch (e) {
+      console.log('ℹ️ Could not load bits badges:', e.message);
+    }
+    
+    // Stelle sicher dass alle Standard-Badges geladen sind
+    const standardBadges = ['broadcaster', 'moderator', 'vip', 'subscriber', 'premium', 'turbo', 'partner', 'staff'];
+    for (const badgeType of standardBadges) {
+      if (!globalBadges[badgeType]) {
+        console.log(`⚠️ Missing badge type: ${badgeType}, will use fallback`);
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Failed to load additional badge sets:', error.message);
+  }
+}
     
     const badgeData = {};
     response.data.data.forEach(badgeSet => {
@@ -314,6 +346,38 @@ async function loadChannelBadges(channelId, accessToken) {
   }
 }
 
+// Lade zusätzliche Badge-Sets die möglicherweise fehlen
+async function loadAdditionalBadgeSets(accessToken) {
+  try {
+    console.log('🏷️ Loading additional badge sets...');
+    
+    // Lade Bits Badges
+    try {
+      const bitsResponse = await axios.get(`${TWITCH_API}/bits/leaderboard`, {
+        headers: {
+          'Client-Id': process.env.TWITCH_CLIENT_ID,
+          'Authorization': `Bearer ${accessToken}`
+        },
+        params: { count: 1, period: 'all' }
+      });
+      console.log('✅ Bits badge data loaded');
+    } catch (e) {
+      console.log('ℹ️ Could not load bits badges:', e.message);
+    }
+    
+    // Stelle sicher dass alle Standard-Badges geladen sind
+    const standardBadges = ['broadcaster', 'moderator', 'vip', 'subscriber', 'premium', 'turbo', 'partner', 'staff'];
+    for (const badgeType of standardBadges) {
+      if (!globalBadges[badgeType]) {
+        console.log(`⚠️ Missing badge type: ${badgeType}, will use fallback`);
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Failed to load additional badge sets:', error.message);
+  }
+}
+
 // ===================== USER PROFILBILD LADEN =====================
 async function loadUserProfileImage(userId, accessToken) {
   try {
@@ -340,17 +404,39 @@ async function loadUserProfileImage(userId, accessToken) {
 // ===================== ERWEITERTE BADGE PARSER =====================
 function parseBadges(tags, channelId = null) {
   const badges = [];
+  
+  // Versuche verschiedene Badge-Formate
   let badgeString = tags.badges || tags['badges-raw'] || '';
+  let badgeInfoString = tags['badge-info'] || tags['badge-info-raw'] || '';
+  
+  // Fallback für TMI.js Format
+  if (typeof tags.badges === 'object' && tags.badges !== null && !Array.isArray(tags.badges)) {
+    // TMI.js gibt manchmal ein Object zurück statt String
+    badgeString = Object.entries(tags.badges)
+      .map(([key, value]) => `${key}/${value}`)
+      .join(',');
+  }
   
   if (typeof badgeString !== 'string') {
     badgeString = String(badgeString || '');
   }
   
-  if (!badgeString || badgeString.length === 0) {
-    return badges;
+  if (typeof badgeInfoString !== 'string') {
+    badgeInfoString = String(badgeInfoString || '');
   }
   
-  console.log('🏷️ Parsing badges:', badgeString);
+  console.log('🏷️ Parsing badges - Input:', {
+    badgeString,
+    badgeInfoString,
+    channelId,
+    tagsType: typeof tags.badges,
+    tagsValue: tags.badges
+  });
+  
+  if (!badgeString || badgeString.length === 0) {
+    console.log('⚠️ No badges found in tags');
+    return badges;
+  }
   
   try {
     const badgePairs = badgeString.split(',');
@@ -358,9 +444,11 @@ function parseBadges(tags, channelId = null) {
       if (!pair || typeof pair !== 'string') continue;
       
       const [name, version] = pair.split('/');
-      if (name && version) {
+      if (name && version !== undefined) {
         const cleanName = name.trim();
-        const cleanVersion = version.trim();
+        const cleanVersion = String(version).trim();
+        
+        console.log(`🔍 Processing badge: ${cleanName}/${cleanVersion}`);
         
         const badgeData = getBadgeData(cleanName, cleanVersion, channelId);
         const badge = {
@@ -369,7 +457,7 @@ function parseBadges(tags, channelId = null) {
           url: badgeData?.url || null,
           url_2x: badgeData?.url_2x || null,
           url_4x: badgeData?.url_4x || null,
-          title: badgeData?.title || getBadgeTitle(cleanName, cleanVersion),
+          title: badgeData?.title || getBadgeTitle(cleanName, cleanVersion, badgeInfoString),
           description: badgeData?.description || '',
           clickAction: badgeData?.clickAction || null,
           clickUrl: badgeData?.clickUrl || null
@@ -377,9 +465,19 @@ function parseBadges(tags, channelId = null) {
         
         if (badge.url) {
           badges.push(badge);
-          console.log('✅ Parsed badge:', badge.name, badge.version);
+          console.log('✅ Added badge:', badge.name, badge.version, badge.title);
         } else {
-          console.log('⚠️ No URL found for badge:', cleanName, cleanVersion);
+          // Versuche Fallback URL für unbekannte Badges
+          const fallbackUrl = getFallbackBadgeUrl(cleanName, cleanVersion);
+          if (fallbackUrl) {
+            badge.url = fallbackUrl;
+            badge.url_2x = fallbackUrl;
+            badge.url_4x = fallbackUrl;
+            badges.push(badge);
+            console.log('✅ Added badge with fallback URL:', badge.name, badge.version);
+          } else {
+            console.log('⚠️ No URL found for badge:', cleanName, cleanVersion);
+          }
         }
       }
     }
@@ -387,40 +485,75 @@ function parseBadges(tags, channelId = null) {
     console.error('❌ Error parsing badges:', error.message);
   }
   
-  console.log(`🏷️ Final badges array: ${badges.length} badges`);
+  console.log(`🏷️ Final badges array: ${badges.length} badges:`, badges.map(b => `${b.name}/${b.version}`));
   return badges;
 }
 
-function getBadgeData(badgeName, badgeVersion, channelId = null) {
-  // Erst in Channel Badges schauen
-  if (channelId && channelBadges[channelId] && channelBadges[channelId][badgeName] && channelBadges[channelId][badgeName][badgeVersion]) {
-    return channelBadges[channelId][badgeName][badgeVersion];
+// ===================== BADGE DATA HELPER =====================
+function getBadgeData(badgeSet, version, channelId = null) {
+  if (channelId && channelBadges[channelId] && channelBadges[channelId][badgeSet]) {
+    return channelBadges[channelId][badgeSet][version] || null;
   }
-  
-  // Dann in Global Badges
-  if (globalBadges[badgeName] && globalBadges[badgeName][badgeVersion]) {
-    return globalBadges[badgeName][badgeVersion];
+  if (globalBadges[badgeSet]) {
+    return globalBadges[badgeSet][version] || null;
   }
-  
   return null;
 }
 
-function getBadgeUrl(badgeName, badgeVersion, channelId = null) {
-  const badgeData = getBadgeData(badgeName, badgeVersion, channelId);
-  return badgeData?.url || null;
+
+const data = getBadgeUrl(badge, version, channelId);
+if (data) {
+  badges.push(`
+    <img src="${data.url}" 
+         srcset="${data.url_2x} 2x, ${data.url_4x} 4x"
+         alt="${badge} badge" 
+         title="${data.title}" 
+         class="chat-badge badge-${badge}">
+  `);
 }
 
-function getBadgeTitle(badgeName, badgeVersion) {
+
+
+// Neue Hilfsfunktion für Fallback Badge URLs
+function getFallbackBadgeUrl(badgeName, badgeVersion) {
+  // Standard Twitch Badge URL Format als Fallback
+  const baseUrl = 'https://static-cdn.jtvnw.net/badges/v1';
+  
+  const knownBadges = {
+    'moderator': `${baseUrl}/3267646d-33f0-4b17-b3df-f923a41db1d0/1`,
+    'vip': `${baseUrl}/b817aba4-fad8-49e2-b88a-7cc744dfa6ec/1`,
+    'broadcaster': `${baseUrl}/5527c58c-fb7d-422d-b71b-f309dcb85cc1/1`,
+    'subscriber': `${baseUrl}/5d9f2208-5dd8-11e7-8513-2ff4adfae661/${badgeVersion}`,
+    'premium': `${baseUrl}/bbbe0db0-a598-423e-86d0-f9fb98ca1933/1`,
+    'turbo': `${baseUrl}/bd444ec6-8f34-4bf9-91f4-af1e3428d80f/1`,
+    'partner': `${baseUrl}/d12a2e27-16f6-41d0-ab77-b780518f00a3/1`,
+    'staff': `${baseUrl}/d97c37bd-a6f5-4c38-8f57-4e4bef88af34/1`
+  };
+  
+  return knownBadges[badgeName] || null;
+}
+
+// Erweiterte getBadgeTitle Funktion
+function getBadgeTitle(badgeName, badgeVersion, badgeInfoString = '') {
   const badgeData = getBadgeData(badgeName, badgeVersion);
   if (badgeData?.title) {
     return badgeData.title;
   }
   
+  // Parse badge-info für zusätzliche Informationen
+  let additionalInfo = '';
+  if (badgeInfoString && badgeInfoString.includes(badgeName)) {
+    const infoMatch = badgeInfoString.match(new RegExp(`${badgeName}\\/(\\d+)`));
+    if (infoMatch) {
+      additionalInfo = infoMatch[1];
+    }
+  }
+  
   // Erweiterte Fallback titles
   const fallbackTitles = {
-    'subscriber': `${badgeVersion} Month Subscriber`,
+    'subscriber': additionalInfo ? `${additionalInfo} Month Subscriber` : `Subscriber`,
     'broadcaster': 'Broadcaster',
-    'moderator': 'Moderator',
+    'moderator': 'Moderator', 
     'vip': 'VIP',
     'founder': 'Founder',
     'premium': 'Prime Gaming',
@@ -428,24 +561,29 @@ function getBadgeTitle(badgeName, badgeVersion) {
     'admin': 'Twitch Admin',
     'global_mod': 'Global Moderator',
     'bits': `${badgeVersion} Bits`,
-    'sub-gifter': `Sub Gifter (${badgeVersion})`,
+    'bits-leader': `Bits Leader ${badgeVersion}`,
+    'sub-gifter': additionalInfo ? `${additionalInfo} Gift Subs` : `Sub Gifter`,
     'sub-gift-leader': 'Sub Gift Leader',
     'turbo': 'Turbo',
-    'partner': 'Partner',
+    'partner': 'Verified',
     'verified': 'Verified',
     'artist-badge': 'Artist',
-    'moments': 'Clip Champ',
+    'moments': 'Moments',
     'clip-champ': 'Clip Champ',
     'glhf-pledge': 'GLHF Pledge',
     'glitchcon2020': 'GlitchCon 2020',
-    'twitch-recap-2021': 'Twitch Recap 2021',
+    'twitch-recap-2023': 'Twitch Recap 2023',
     'hype-train': `Hype Train Level ${badgeVersion}`,
-    'predictions': 'Predictions'
+    'predictions': 'Predictions',
+    'no_audio': 'No Audio',
+    'no_video': 'No Video',
+    'ambassador': 'Twitch Ambassador',
+    'animated': 'Animated Emotes',
+    'anonymous-cheerer': 'Anonymous Cheerer'
   };
   
   return fallbackTitles[badgeName] || `${badgeName} ${badgeVersion}`;
 }
-
 // ===================== ERWEITERTE EMOTE PARSER =====================
 function parseEmotesExtended(text, twitchEmotes = null) {
   if (!text) return text;
@@ -762,7 +900,12 @@ class GiveawayManager {
       displayName: this.hostLogin,
       joinedAt: new Date().toISOString(),
       luck: 1.0,
-      badges: [{ name: 'broadcaster', version: '1', url: getBadgeUrl('broadcaster', '1'), title: 'Broadcaster' }],
+      badges: [{ 
+  name: 'broadcaster', 
+  version: '1', 
+  url: getBadgeUrl('broadcaster', '1', this.channelId), 
+  title: 'Broadcaster' 
+}],
       multiplierText: '1.00x',
       profileImageUrl: hostProfileUrl,
       isHost: true
@@ -990,11 +1133,14 @@ async function ensureTmiClient(session) {
 
   sessionRef = session;
 
-  // Lade alle Badge- und Emote-Daten
-  await loadGlobalBadges(session.twitch.access_token);
-  await loadGlobalEmotes(session.twitch.access_token);
-  await loadBTTVEmotes();
-  await loadFFZEmotes();
+// Lade alle Badge- und Emote-Daten
+await loadGlobalBadges(session.twitch.access_token);
+if (typeof loadAdditionalBadgeSets === 'function') {
+  await loadAdditionalBadgeSets(session.twitch.access_token);
+}
+await loadGlobalEmotes(session.twitch.access_token);
+await loadBTTVEmotes();
+await loadFFZEmotes();
   
   if (session.user.id) {
     await loadChannelBadges(session.user.id, session.twitch.access_token);
@@ -1003,38 +1149,67 @@ async function ensureTmiClient(session) {
     await loadFFZEmotes(session.user.id);
   }
 
-  tmiClient = new tmi.Client({
-    options: { debug: false },
-    connection: { reconnect: true, secure: true },
-    identity: { username: session.user.login, password: 'oauth:' + session.twitch.access_token },
-    channels: []
+tmiClient = new tmi.Client({
+  options: { 
+    debug: false,
+    skipUpdatingEmotesets: false,  // Wichtig für Badge-Updates
+    skipMembership: false          // Wichtig für vollständige User-Infos
+  },
+  connection: { 
+    reconnect: true, 
+    secure: true,
+    maxReconnectAttempts: 3
+  },
+  identity: { 
+    username: session.user.login, 
+    password: 'oauth:' + session.twitch.access_token 
+  },
+  channels: []
+});
+
+// Track kürzlich gesendete Website-Nachrichten
+tmiClient.on('message', async (channel, tags, message, self) => {
+  // Prüfe ob diese Nachricht eine Duplikat von einer Website-Nachricht ist
+  if (self && tags.username === sessionRef?.user?.login) {
+    const messageKey = `${tags.username}_${message}`;
+    const recentMessage = global.recentWebsiteMessages?.get(messageKey);
+    
+    if (recentMessage && (Date.now() - recentMessage.timestamp) < 3000) {
+      console.log('📨 Skipping duplicate message from website that came back via Twitch');
+      return; // Skip diese Nachricht, sie wurde bereits von der Website angezeigt
+    }
+    
+    console.log('📨 Own message from Twitch chat (not a duplicate)');
+  }
+
+  // Debug: Zeige ALLE Badge-Daten
+  console.log('🔨 Twitch message received - FULL TAGS:', {
+    user: tags['display-name'] || tags['username'],
+    message: message,
+    badges: tags.badges,
+    badgesRaw: tags['badges-raw'],
+    badgeInfo: tags['badge-info'],
+    badgeInfoRaw: tags['badge-info-raw'],
+    userId: tags['user-id'],
+    emotes: tags.emotes,
+    isSelf: self,
+    allTags: tags  // Zeige ALLE Tags für Debug
   });
 
-  tmiClient.on('message', async (channel, tags, message, self) => {
-    if (self) return;
-
-    console.log('📨 Twitch message received:', {
-      user: tags['display-name'] || tags['username'],
-      message: message,
-      badges: tags.badges,
-      userId: tags['user-id'],
-      emotes: tags.emotes
-    });
-
-    const userId = tags['user-id'];
-    let profileImageUrl = null;
-    
-    if (userId && sessionRef?.twitch?.access_token) {
-      try {
-        profileImageUrl = await loadUserProfileImage(userId, sessionRef.twitch.access_token);
-      } catch (e) {
-        console.error('Failed to load profile image:', e);
-      }
+  const userId = tags['user-id'];
+  let profileImageUrl = null;
+  
+  if (userId && sessionRef?.twitch?.access_token) {
+    try {
+      profileImageUrl = await loadUserProfileImage(userId, sessionRef.twitch.access_token);
+    } catch (e) {
+      console.error('Failed to load profile image:', e);
     }
+  }
 
-    // KORRIGIERT: Erweiterte Emote-Parsing
-    const parsedMessage = parseEmotesExtended(message, tags.emotes);
-    const result = giveaway.tryAdd(tags, message);
+  // KORRIGIERT: Erweiterte Emote-Parsing
+  const parsedMessage = parseEmotesExtended(message, tags.emotes);
+  const result = giveaway.tryAdd(tags, message);
 
     if (result && result.type === 'spam_blocked') {
       io.emit('participant:spam_blocked', result);
@@ -1042,26 +1217,36 @@ async function ensureTmiClient(session) {
       return;
     }
 
-    const badges = parseBadges(tags, giveaway.channelId);
-    const luck = computeLuckFromTags(tags);
+   // Parse Badges mit verbessertem Channel-ID Handling
+  const channelIdToUse = giveaway.channelId || sessionRef?.user?.id || null;
+  const badges = parseBadges(tags, channelIdToUse);
+  const luck = computeLuckFromTags(tags);
 
-    const chatEvent = {
-      channel,
-      user: tags['display-name'] || tags['username'],
-      userId: tags['user-id'],
-      text: message,
-      message: parsedMessage,
-      color: tags.color || '#a78bfa',
-      badges: badges,
-      luck: luck,
-      multiplierText: getMultiplierText(luck),
-      timestamp: new Date().toISOString(),
-      isParticipant: !!result,
-      profileImageUrl: profileImageUrl,
-      isTwitchUser: true
-    };
+  console.log('📛 Parsed badges for message:', {
+    user: tags['display-name'],
+    badgeCount: badges.length,
+    badges: badges.map(b => `${b.name}/${b.version}`),
+    channelId: channelIdToUse
+  });
 
-    io.emit('chat', chatEvent);
+const chatEvent = {
+  channel,
+  user: tags['display-name'] || tags['username'],
+  userId: tags['user-id'],
+  text: message,
+  message: parsedMessage,
+  color: tags.color || '#a78bfa',
+  badges: badges,
+  luck: luck,
+  multiplierText: getMultiplierText(luck),
+  timestamp: new Date().toISOString(),
+  isParticipant: !!result,
+  profileImageUrl: profileImageUrl,
+  isTwitchUser: true,
+  isOwnMessage: false  // Zeige ALLE Nachrichten an, keine Duplikate filtern
+};
+
+  io.emit('chat', chatEvent);
 
     if (result && typeof result === 'object' && result.login) {
       if (profileImageUrl) {
@@ -1109,6 +1294,7 @@ app.get('/auth/twitch/callback', async (req, res) => {
     res.status(500).send('OAuth error.');
   }
 });
+
 
 app.get('/logout', (req, res) => {
   req.session.destroy();
@@ -1325,25 +1511,66 @@ app.post('/api/chat/send', async (req,res) => {
     const text = (req.body?.text || '').toString();
     if(!text.trim()) return res.status(400).json({ error: 'empty' });
     
-    // KORRIGIERT: Verwende aktuell angemeldeten Benutzer, nicht hardcoded
     const currentUser = req.session.user;
     const ch = (giveaway.channel || currentUser.login).toLowerCase();
     const client = await ensureTmiClient(req.session);
     if(!client.getChannels().includes('#' + ch)) await client.join(ch);
 
-    // KORRIGIERT: Verwende echte Session-Daten
+    // Hole die echten Badges des Users von Twitch
+    let userBadges = '';
+    let userBadgeInfo = '';
+    
+    try {
+      // Hole User Channel Info für Badges
+      const channelResponse = await axios.get(`${TWITCH_API}/chat/settings`, {
+        headers: {
+          'Client-Id': process.env.TWITCH_CLIENT_ID,
+          'Authorization': `Bearer ${req.session.twitch.access_token}`
+        },
+        params: {
+          broadcaster_id: currentUser.id,
+          moderator_id: currentUser.id
+        }
+      });
+      
+      // Setze Broadcaster Badge wenn es der Channel Owner ist
+      if (ch === currentUser.login.toLowerCase()) {
+        userBadges = 'broadcaster/1';
+      }
+    } catch (e) {
+      console.log('Could not fetch user badges, using default');
+      if (ch === currentUser.login.toLowerCase()) {
+        userBadges = 'broadcaster/1';
+      }
+    }
+
     const simulatedTags = {
       'username': currentUser.login,
       'display-name': currentUser.display_name || currentUser.login,
       'user-id': currentUser.id,
       'color': currentUser.color || '#a970ff',
-      'badges': 'broadcaster/1', // Host badge
-      'badge-info': '',
-      'emotes': null // Website messages haben keine nativen Twitch emotes
+      'badges': userBadges,
+      'badge-info': userBadgeInfo,
+      'emotes': null
     };
     
     console.log('📤 Sending message as:', simulatedTags['display-name'], 'ID:', simulatedTags['user-id']);
     
+// Track diese Nachricht um Duplikate zu verhindern
+    const messageKey = `${currentUser.login}_${text}`;
+    if (!global.recentWebsiteMessages) {
+      global.recentWebsiteMessages = new Map();
+    }
+    global.recentWebsiteMessages.set(messageKey, {
+      timestamp: Date.now(),
+      text: text
+    });
+    
+    // Lösche alte Nachrichten nach 3 Sekunden
+    setTimeout(() => {
+      global.recentWebsiteMessages.delete(messageKey);
+    }, 3000);
+
     const participant = giveaway.tryAdd(simulatedTags, text);
     await client.say(ch, text);
 
@@ -1370,6 +1597,10 @@ app.post('/api/chat/send', async (req,res) => {
       isTwitchUser: true
     };
 
+// Markiere diese Nachricht als von der Website gesendet
+    chatEvent.isWebsiteMessage = true;
+    chatEvent.messageId = `web_${Date.now()}_${Math.random()}`;
+    
     io.emit('chat', chatEvent);
     if (participant) {
       if (currentUser.profile_image_url) {
