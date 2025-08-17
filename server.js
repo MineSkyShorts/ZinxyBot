@@ -1,4 +1,4 @@
-// ===================== KORRIGIERTER SERVER.JS - BENUTZERSPEZIFISCH =====================
+// ===================== KORRIGIERTER SERVER.JS - VOLLSTÄNDIG UND OHNE MOD/VIP BONUS =====================
 import express from 'express';
 import session from 'express-session';
 import axios from 'axios';
@@ -29,12 +29,10 @@ app.use(session({
 }));
 
 // ===================== BENUTZERSPEZIFISCHE DATENSTRUKTUREN =====================
-// Anstatt globaler Variablen jetzt Maps mit Benutzer-ID als Key
-const userSessions = new Map(); // userId -> { giveaway, settings, tmiClient, etc. }
-const userBadges = new Map(); // userId -> { global, channel }
-const userEmotes = new Map(); // userId -> { global, channel, bttv, ffz }
+const userSessions = new Map();
+const userBadges = new Map();
+const userEmotes = new Map();
 
-// Globale Emotes/Badges (werden für alle Benutzer geteilt)
 let globalBadges = {};
 let globalEmotes = new Map();
 let bttvEmotes = new Map();
@@ -84,14 +82,14 @@ function getUserSession(userId) {
         ]
       },
       generalSettings: {
-        autoJoinHost: true,
+        autoJoinHost: false, // ✅ GEÄNDERT: Auto-join standardmäßig AUS
         antispam: true
       },
       spamTracker: new Map(),
       tmiClient: null,
       channelBadges: {},
       channelEmotes: new Map(),
-      socketIds: new Set() // Socket-IDs für diesen Benutzer
+      socketIds: new Set()
     });
   }
   return userSessions.get(userId);
@@ -108,20 +106,18 @@ function cleanupUserSession(userId) {
   }
 }
 
-// ===================== SOCKET MANAGEMENT FÜR BENUTZER =====================
-const socketUserMap = new Map(); // socketId -> userId
+// ===================== SOCKET MANAGEMENT =====================
+const socketUserMap = new Map();
 
 io.on('connection', (socket) => {
   console.log('🔌 Client connected:', socket.id);
   
-  // Bei Socket-Verbindung den Benutzer identifizieren
   socket.on('auth', (userId) => {
     if (userId) {
       socketUserMap.set(socket.id, userId);
       const userSession = getUserSession(userId);
       userSession.socketIds.add(socket.id);
       
-      // Sende aktuelle Daten nur an diesen Benutzer
       sendUserSpecificData(socket, userId);
       console.log(`✅ Socket ${socket.id} authenticated for user ${userId}`);
     }
@@ -133,14 +129,13 @@ io.on('connection', (socket) => {
       const userSession = getUserSession(userId);
       userSession.socketIds.delete(socket.id);
       
-      // Wenn der Benutzer keine aktiven Sockets mehr hat, Session nach Timeout cleanup
       if (userSession.socketIds.size === 0) {
         setTimeout(() => {
           const session = getUserSession(userId);
           if (session.socketIds.size === 0) {
             cleanupUserSession(userId);
           }
-        }, 5 * 60 * 1000); // 5 Minuten Timeout
+        }, 5 * 60 * 1000);
       }
       
       socketUserMap.delete(socket.id);
@@ -149,7 +144,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// Helper function um Daten nur an spezifische Benutzer zu senden
 function emitToUser(userId, event, data) {
   const userSession = getUserSession(userId);
   userSession.socketIds.forEach(socketId => {
@@ -160,7 +154,6 @@ function emitToUser(userId, event, data) {
 function sendUserSpecificData(socket, userId) {
   const userSession = getUserSession(userId);
   
-  // Sende aktuellen Giveaway Status
   socket.emit('giveaway:status', { 
     state: userSession.giveaway.state, 
     keyword: userSession.giveaway.keyword, 
@@ -170,20 +163,18 @@ function sendUserSpecificData(socket, userId) {
     autoJoinHost: userSession.generalSettings.autoJoinHost
   });
   
-  // Sende aktuelle Participants
   const participants = Array.from(userSession.giveaway.participants.values());
   participants.forEach(participant => {
     socket.emit('participant:add', participant);
   });
   
-  // Sende Stats
   socket.emit('stats:update', userSession.giveaway.getStats());
 }
 
 // ===================== EMOTE LOADER FUNKTIONEN =====================
 async function loadGlobalEmotes(accessToken) {
   try {
-    console.log('📝 Loading global Twitch emotes...');
+    console.log('🔍 Loading global Twitch emotes...');
     const response = await axios.get(`${TWITCH_API}/chat/emotes/global`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -241,7 +232,6 @@ async function loadBTTVEmotes(channelId = null) {
   try {
     console.log('🎭 Loading BTTV emotes...');
     
-    // Global BTTV emotes
     const globalResponse = await axios.get('https://api.betterttv.net/3/cached/emotes/global');
     bttvEmotes.clear();
     globalResponse.data.forEach(emote => {
@@ -255,7 +245,6 @@ async function loadBTTVEmotes(channelId = null) {
       });
     });
     
-    // Channel-specific BTTV emotes
     if (channelId) {
       try {
         const channelResponse = await axios.get(`https://api.betterttv.net/3/cached/users/twitch/${channelId}`);
@@ -295,7 +284,6 @@ async function loadFFZEmotes(channelId = null) {
   try {
     console.log('🐸 Loading FrankerFaceZ emotes...');
     
-    // Global FFZ emotes
     const globalResponse = await axios.get('https://api.frankerfacez.com/v1/set/global');
     ffzEmotes.clear();
     Object.values(globalResponse.data.sets).forEach(set => {
@@ -312,7 +300,6 @@ async function loadFFZEmotes(channelId = null) {
       });
     });
     
-    // Channel-specific FFZ emotes
     if (channelId) {
       try {
         const channelResponse = await axios.get(`https://api.frankerfacez.com/v1/room/id/${channelId}`);
@@ -414,7 +401,6 @@ async function loadChannelBadges(channelId, accessToken, userId) {
   }
 }
 
-// ===================== USER PROFILBILD LADEN =====================
 async function loadUserProfileImage(userId, accessToken) {
   try {
     const response = await axios.get(`${TWITCH_API}/users`, {
@@ -437,7 +423,7 @@ async function loadUserProfileImage(userId, accessToken) {
   }
 }
 
-// ===================== BADGE PARSER =====================
+// ===================== KORRIGIERTE BADGE PARSER =====================
 function parseBadges(tags, userId = null) {
   const badges = [];
   
@@ -577,15 +563,11 @@ function parseEmotesExtended(text, twitchEmotes = null, userId = null) {
   
   let result = text;
   
-  // 1. Twitch-native Emotes
   if (twitchEmotes) {
     result = parseNativeTwitchEmotes(result, twitchEmotes);
   }
   
-  // 2. Text-Emotes
   result = parseTextEmotes(result);
-  
-  // 3. Globale und channel Twitch emotes
   result = parseWordEmotes(result, globalEmotes, 'twitch');
   
   if (userId) {
@@ -593,7 +575,6 @@ function parseEmotesExtended(text, twitchEmotes = null, userId = null) {
     result = parseWordEmotes(result, userSession.channelEmotes, 'twitch');
   }
   
-  // 4. BTTV und FFZ Emotes
   result = parseWordEmotes(result, bttvEmotes, 'bttv');
   result = parseWordEmotes(result, ffzEmotes, 'ffz');
   
@@ -682,13 +663,12 @@ function parseWordEmotes(text, emoteMap, provider) {
   return result;
 }
 
-// ===================== LUCK BERECHNUNG =====================
+// ===================== KORRIGIERTE LUCK BERECHNUNG - NUR BITS UND SUBS =====================
 function computeLuckFromTags(tags, userId) {
   const userSession = getUserSession(userId);
   if (!userSession.luckSettings.enabled) return 1.0;
 
-  let baseLuck = 1.0;
-  let additionalLuck = 0.0;
+  let totalLuck = 1.0;
   let badges = tags.badges || tags['badges-raw'] || '';
   let badgeInfo = tags['badge-info'] || '';
 
@@ -700,61 +680,71 @@ function computeLuckFromTags(tags, userId) {
     badgeInfo = String(badgeInfo || '');
   }
 
-  // Bit Badges
-  if (badges.includes('bits/')) {
-    const bitsMatch = badges.match(/bits\/(\d+)/);
-    if (bitsMatch) {
-      const bitAmount = parseInt(bitsMatch[1]);
-      
-      for (const tier of userSession.luckSettings.bits.slice().reverse()) {
-        if (bitAmount >= tier.min) {
-          const bitBonus = tier.mult - 1.0;
-          additionalLuck += bitBonus;
-          break;
-        }
+  console.log(`🎯 Computing luck for user with badges: ${badges}, badge-info: ${badgeInfo}`);
+
+  // ✅ KORRIGIERTE BIT BADGES LOGIK
+  const bitsMatch = badges.match(/bits\/(\d+)/);
+  if (bitsMatch) {
+    const bitAmount = parseInt(bitsMatch[1]);
+    console.log(`💎 Found bits badge with amount: ${bitAmount}`);
+    
+    // Finde die höchste passende Tier (von groß zu klein)
+    for (const tier of userSession.luckSettings.bits.slice().reverse()) {
+      if (bitAmount >= tier.min) {
+        totalLuck *= tier.mult;
+        console.log(`💎 Applied bits multiplier: ${tier.mult}x for ${tier.min}+ bits`);
+        break;
       }
     }
   }
 
-  // Subscription Badges
+  // ✅ KORRIGIERTE SUBSCRIBER BADGES LOGIK
   if (badges.includes('subscriber/') || badges.includes('founder/')) {
+    // Suche nach subscriber Monaten in badge-info
     const subMatch = badgeInfo.match(/subscriber\/(\d+)/);
     if (subMatch) {
       const subMonths = parseInt(subMatch[1]);
+      console.log(`👑 Found subscriber with ${subMonths} months`);
       
+      // Finde die höchste passende Tier (von groß zu klein)
       for (const tier of userSession.luckSettings.subs.slice().reverse()) {
         if (subMonths >= tier.min) {
-          const subBonus = tier.mult - 1.0;
-          additionalLuck += subBonus;
+          totalLuck *= tier.mult;
+          console.log(`👑 Applied sub multiplier: ${tier.mult}x for ${tier.min}+ months`);
           break;
         }
       }
     } else {
-      const defaultSubBonus = 0.2;
-      additionalLuck += defaultSubBonus;
+      // Fallback für neue Subscriber ohne badge-info
+      const defaultSubTier = userSession.luckSettings.subs.find(tier => tier.min === 1);
+      if (defaultSubTier) {
+        totalLuck *= defaultSubTier.mult;
+        console.log(`👑 Applied default sub multiplier: ${defaultSubTier.mult}x`);
+      }
     }
   }
 
-  // Special badges
-  if (badges.includes('broadcaster/') || badges.includes('moderator/') || badges.includes('vip/')) {
-    const specialBonus = 0.2;
-    additionalLuck += specialBonus;
-  }
+  // ✅ ENTFERNT: Keine Bonusse mehr für Moderator/VIP/Broadcaster
+  // Nur Bits und Subscriber Badges bekommen Multiplier
 
-  const totalLuck = baseLuck + additionalLuck;
   const finalLuck = Math.round(totalLuck * 100) / 100;
+  console.log(`🎲 Final luck calculated: ${finalLuck}x`);
 
   return finalLuck;
 }
 
+// ✅ KORRIGIERTE MULTIPLIER TEXT FUNKTION
 function getMultiplierText(luck) {
-  return `${luck.toFixed(2)}x`;
+  // Immer mit 2 Dezimalstellen anzeigen, mindestens 1.00x
+  const formattedLuck = Math.max(1.0, luck).toFixed(2);
+  return `${formattedLuck}x`;
 }
 
 function normalizeText(text) {
   return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// KORRIGIERT:
 function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -802,7 +792,7 @@ class GiveawayManager {
     this.spamBlockedUsers = new Set();
     this.duration = 0;
     this.subsOnly = false;
-    this.autoJoinHost = true;
+    this.autoJoinHost = false; // ✅ GEÄNDERT: Standardmäßig AUS
     this.startTime = null;
   }
 
@@ -860,7 +850,7 @@ class GiveawayManager {
     this.spamBlockedUsers.clear();
     this.duration = 0;
     this.subsOnly = false;
-    this.autoJoinHost = true;
+    this.autoJoinHost = false; // ✅ GEÄNDERT: Standardmäßig AUS
     this.startTime = null;
   }
 
@@ -948,19 +938,24 @@ class GiveawayManager {
     return participant;
   }
 
+  // ✅ KORRIGIERTE UPDATE PARTICIPANTS LUCK FUNKTION
   updateParticipantsLuck(userId) {
+    console.log(`🔄 Updating luck for ${this.participants.size} participants`);
+    
     for (const [login, participant] of this.participants.entries()) {
+      // Rekonstruiere Tags aus participant data
       const mockTags = {
         'username': participant.login,
         'display-name': participant.displayName,
         'user-id': participant.userId,
         'badges': participant.badges ? participant.badges.map(b => `${b.name}/${b.version}`).join(',') : '',
-        'badge-info': ''
+        'badge-info': this.getBadgeInfoFromBadges(participant.badges)
       };
       
       const newLuck = computeLuckFromTags(mockTags, userId);
       
-      if (newLuck !== participant.luck) {
+      if (Math.abs(newLuck - participant.luck) > 0.01) { // Nur update wenn signifikante Änderung
+        console.log(`🎲 Updating ${login} luck from ${participant.luck} to ${newLuck}`);
         participant.luck = newLuck;
         participant.multiplierText = getMultiplierText(newLuck);
         this.participants.set(login, participant);
@@ -968,6 +963,20 @@ class GiveawayManager {
         emitToUser(userId, 'participant:update', participant);
       }
     }
+  }
+
+  // Helper um badge-info aus badges zu rekonstruieren
+  getBadgeInfoFromBadges(badges) {
+    if (!badges || !Array.isArray(badges)) return '';
+    
+    const badgeInfo = [];
+    badges.forEach(badge => {
+      if (badge.name === 'subscriber' && badge.version) {
+        badgeInfo.push(`subscriber/${badge.version}`);
+      }
+    });
+    
+    return badgeInfo.join(',');
   }
 
   getStatus() {
@@ -1018,7 +1027,6 @@ async function ensureTmiClient(sessionData, userId) {
     throw new Error('Missing token or login');
   }
 
-  // Lade Badge- und Emote-Daten für diesen Benutzer
   await loadGlobalBadges(sessionData.twitch.access_token);
   await loadGlobalEmotes(sessionData.twitch.access_token);
   await loadBTTVEmotes();
@@ -1049,19 +1057,17 @@ async function ensureTmiClient(sessionData, userId) {
     channels: []
   });
 
-  // Track kürzlich gesendete Website-Nachrichten für diesen Benutzer
   if (!global.recentWebsiteMessages) {
     global.recentWebsiteMessages = new Map();
   }
 
   userSession.tmiClient.on('message', async (channel, tags, message, self) => {
-    // Überprüfe ob diese Nachricht eine Duplikat von einer Website-Nachricht ist
     if (self && tags.username === sessionData?.user?.login) {
       const messageKey = `${userId}_${tags.username}_${message}`;
       const recentMessage = global.recentWebsiteMessages?.get(messageKey);
       
       if (recentMessage && (Date.now() - recentMessage.timestamp) < 3000) {
-        return; // Skip diese Nachricht
+        return;
       }
     }
 
@@ -1076,7 +1082,6 @@ async function ensureTmiClient(sessionData, userId) {
       }
     }
 
-    // Parse Emotes mit Benutzer-ID
     const parsedMessage = parseEmotesExtended(message, tags.emotes, userId);
     const result = userSession.giveaway.tryAdd(tags, message, userId);
 
@@ -1086,8 +1091,6 @@ async function ensureTmiClient(sessionData, userId) {
       return;
     }
 
-    // Parse Badges mit Benutzer-ID
-    const channelIdToUse = userSession.giveaway.channelId || sessionData?.user?.id || null;
     const badges = parseBadges(tags, userId);
     const luck = computeLuckFromTags(tags, userId);
 
@@ -1158,7 +1161,6 @@ app.get('/auth/twitch/callback', async (req, res) => {
 });
 
 app.get('/logout', (req, res) => {
-  // Cleanup user session beim Logout
   if (req.session?.user?.id) {
     cleanupUserSession(req.session.user.id);
   }
@@ -1374,16 +1376,21 @@ app.put('/api/settings/luck', (req, res) => {
   const userSession = getUserSession(userId);
   const { enabled, bits, subs } = req.body || {};
   
+  console.log(`💾 Saving luck settings for user ${userId}:`, { enabled, bits: bits?.length, subs: subs?.length });
+  
   if (typeof enabled === 'boolean') userSession.luckSettings.enabled = enabled;
   if (Array.isArray(bits)) {
     const validBits = bits.filter(b => typeof b.min === 'number' && typeof b.mult === 'number');
     userSession.luckSettings.bits = validBits.sort((a, b) => a.min - b.min);
+    console.log(`💎 Updated bits settings:`, userSession.luckSettings.bits);
   }
   if (Array.isArray(subs)) {
     const validSubs = subs.filter(s => typeof s.min === 'number' && typeof s.mult === 'number');
     userSession.luckSettings.subs = validSubs.sort((a, b) => a.min - b.min);
+    console.log(`👑 Updated subs settings:`, userSession.luckSettings.subs);
   }
   
+  // ✅ WICHTIG: Aktualisiere alle existing participants
   userSession.giveaway.updateParticipantsLuck(userId);
   
   emitToUser(userId, 'settings:luck_updated', userSession.luckSettings);
@@ -1470,7 +1477,6 @@ app.post('/api/chat/send', async (req, res) => {
       'emotes': null
     };
     
-    // Track diese Nachricht um Duplikate zu verhindern
     const messageKey = `${userId}_${currentUser.login}_${text}`;
     if (!global.recentWebsiteMessages) {
       global.recentWebsiteMessages = new Map();
@@ -1480,7 +1486,6 @@ app.post('/api/chat/send', async (req, res) => {
       text: text
     });
     
-    // Lösche alte Nachrichten nach 3 Sekunden
     setTimeout(() => {
       global.recentWebsiteMessages.delete(messageKey);
     }, 3000);
@@ -1491,7 +1496,6 @@ app.post('/api/chat/send', async (req, res) => {
     const badges = parseBadges(simulatedTags, userId);
     const luck = computeLuckFromTags(simulatedTags, userId);
 
-    // Parse Emotes auch für Website-Nachrichten
     const parsedMessage = parseEmotesExtended(text, null, userId);
 
     const chatEvent = {
@@ -1588,14 +1592,13 @@ io.on('connection', (socket) => {
       const userSession = getUserSession(userId);
       userSession.socketIds.delete(socket.id);
       
-      // Wenn der Benutzer keine aktiven Sockets mehr hat, Session nach Timeout cleanup
       if (userSession.socketIds.size === 0) {
         setTimeout(() => {
           const session = getUserSession(userId);
           if (session.socketIds.size === 0) {
             cleanupUserSession(userId);
           }
-        }, 5 * 60 * 1000); // 5 Minuten Timeout
+        }, 5 * 60 * 1000);
       }
       
       socketUserMap.delete(socket.id);
@@ -1608,14 +1611,12 @@ io.on('connection', (socket) => {
     socket.emit('status', 'err');
   });
   
-  // Auth Event um Benutzer zu identifizieren
   socket.on('auth', (userId) => {
     if (userId) {
       socketUserMap.set(socket.id, userId);
       const userSession = getUserSession(userId);
       userSession.socketIds.add(socket.id);
       
-      // Sende aktuelle Daten nur an diesen Benutzer
       sendUserSpecificData(socket, userId);
       console.log(`✅ Socket ${socket.id} authenticated for user ${userId}`);
     }
@@ -1642,6 +1643,8 @@ io.on('connection', (socket) => {
 const port = process.env.PORT || 3000;
 server.listen(port, () => {
   console.log(`🏆 ZinxyBot server running on http://localhost:${port}`);
-  console.log('🎯 Ready for user-specific giveaways with enhanced emotes and badges!');
+  console.log('🎯 Ready for user-specific giveaways with FIXED luck multipliers!');
   console.log('✅ Each user now has their own isolated session and data');
+  console.log('🎲 Luck calculation: ONLY Bits and Subscriber badges get multipliers');
+  console.log('❌ NO bonuses for Moderator/VIP/Broadcaster badges');
 });
