@@ -1,5 +1,5 @@
-// ---- Enhanced Dashboard Bootstrapping - KORRIGIERT MIT BENUTZER-AUTHENTIFIZIERUNG ----
-// DATEI: app.js - Korrigiert für benutzerspezifische Sessions
+// ---- Enhanced Dashboard Bootstrapping - KORRIGIERT MIT LUCK MULTIPLIER FIX ----
+// DATEI: app.js - Korrigiert für richtige Luck-Anzeige
 
 document.addEventListener('DOMContentLoaded', () => { 
   // Initialize Lucide icons first
@@ -36,7 +36,7 @@ async function boot() {
       duration: parseInt(localStorage.getItem('giveaway_duration')) || 5,
       durationMode: localStorage.getItem('giveaway_duration_mode') || 'manual',
       subsOnly: localStorage.getItem('giveaway_subs_only') === 'true',
-      autoJoinHost: localStorage.getItem('giveaway_auto_join_host') !== 'false'
+      autoJoinHost: localStorage.getItem('giveaway_auto_join_host') === 'true' // ✅ GEÄNDERT: Standardmäßig false, nur wenn explizit 'true' gespeichert
     },
     winner: {
       currentWinner: null,
@@ -409,7 +409,7 @@ async function boot() {
     }
   };
 
-  // Settings Management System (angepasst für benutzerspezifische Daten)
+  // Settings Management System
   const SettingsManager = {
     currentSettings: {
       luck: {
@@ -441,16 +441,20 @@ async function boot() {
 
     async loadSettings() {
       try {
+        console.log('🔄 Loading settings from server...');
+        
         // Lade Luck Settings
         const luckResponse = await fetch('/api/settings/luck');
         if (luckResponse.ok) {
           this.currentSettings.luck = await luckResponse.json();
+          console.log('💎 Loaded luck settings:', this.currentSettings.luck);
         }
 
         // Lade General Settings
         const generalResponse = await fetch('/api/settings/general');
         if (generalResponse.ok) {
           this.currentSettings.general = await generalResponse.json();
+          console.log('⚙️ Loaded general settings:', this.currentSettings.general);
         }
 
         this.updateSettingsUI();
@@ -460,6 +464,8 @@ async function boot() {
     },
 
     updateSettingsUI() {
+      console.log('🔄 Updating settings UI...');
+      
       // Update Bit Badge Sliders
       const bitSliders = document.querySelectorAll('[data-bits-range]');
       bitSliders.forEach(slider => {
@@ -471,6 +477,7 @@ async function boot() {
           if (output) {
             output.textContent = `${setting.mult.toFixed(2)}x`;
           }
+          console.log(`💎 Updated bit slider for ${minValue}: ${setting.mult}x`);
         }
       });
 
@@ -485,6 +492,7 @@ async function boot() {
           if (output) {
             output.textContent = `${setting.mult.toFixed(2)}x`;
           }
+          console.log(`👑 Updated sub slider for ${minValue}: ${setting.mult}x`);
         }
       });
 
@@ -1194,7 +1202,8 @@ async function boot() {
       
       const luckDisplay = participantItem.querySelector('.participant-luck');
       if (luckDisplay && participant.luck !== undefined) {
-        const multiplierText = participant.luck > 1.0 ? `${participant.luck.toFixed(2)}x Luck` : 'No Multiplier';
+        // ✅ KORRIGIERTER MULTIPLIER TEXT - Zeige immer "X.XXx" Format
+        const multiplierText = `${Math.max(1.0, participant.luck).toFixed(2)}x`;
         luckDisplay.textContent = multiplierText;
         
         luckDisplay.style.transition = 'all 0.3s ease';
@@ -1467,16 +1476,17 @@ async function boot() {
     }).join('');
   }
 
-  // KORRIGIERTE renderParticipant Funktion
+  // ✅ KORRIGIERTE renderParticipant Funktion mit FIXED Luck Display
   function renderParticipant(p) {
     console.log('🎨 Rendering participant:', p.login, 'Luck:', p.luck);
     const login = p.login || p.name || p.user || '';
     const display = p.displayName || p.display || login;
     const avatar = p.profileImageUrl || p.avatar || p.avatarUrl || '';
-    const luck = p.luck || p.mult || 1;
+    const luck = p.luck || p.mult || 1.0;
     const badges = renderBadges(p.badges);
     
-    const multiplierText = luck > 1.0 ? `${luck.toFixed(2)}x Luck` : 'No Multiplier';
+    // ✅ KORRIGIERT: Zeige immer "X.XXx" Format, nie "No Multiplier"
+    const multiplierText = `${Math.max(1.0, luck).toFixed(2)}x`;
     
     let avatarHtml;
     if (avatar) {
@@ -1634,7 +1644,7 @@ async function boot() {
       });
       
       if (existing) {
-        console.log('📨 Skipping duplicate message:', ev.user, ev.text);
+        console.log('🔨 Skipping duplicate message:', ev.user, ev.text);
         return;
       }
     }
@@ -1655,13 +1665,17 @@ async function boot() {
     const name = ev?.user || 'User';
     const color = ev?.color || '#a2a2ad';
     const badges = renderBadges(ev.badges || []);
+    
+    // ✅ KORRIGIERT: Zeige Luck-Multiplier richtig an
     const multiplierText = (ev.luck && ev.luck > 1) ? `${ev.luck.toFixed(2)}x` : '';
     const isParticipant = ev.isParticipant || false;
     
     console.log('💬 Displaying chat message:', {
       user: name,
       badgeCount: (ev.badges || []).length,
-      badges: (ev.badges || []).map(b => b.name)
+      badges: (ev.badges || []).map(b => b.name),
+      luck: ev.luck,
+      multiplierText
     });
       
     const empty = elements.chatList.querySelector('.empty');
@@ -1785,8 +1799,9 @@ async function boot() {
     }
   });
 
-  console.log('🎬 Enhanced ZinxyBot Dashboard fully initialized with user-specific sessions!');
+  console.log('🎬 Enhanced ZinxyBot Dashboard fully initialized with FIXED luck multipliers!');
   console.log('🔐 User authentication and session isolation active');
+  console.log('🎲 Luck multiplier display corrected - always shows X.XXx format');
 }
 
 function escapeHtml(s) {
