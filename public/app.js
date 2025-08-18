@@ -1,5 +1,5 @@
-// ---- Enhanced Dashboard Bootstrapping - KORRIGIERT MIT LUCK MULTIPLIER FIX ----
-// DATEI: app.js - Korrigiert für richtige Luck-Anzeige
+// ---- Enhanced Dashboard Bootstrapping - KORRIGIERT MIT TIMER-FIX UND MM:SS FORMAT ----
+// DATEI: app.js - Korrigiert für Timer-Ende-Problem und MM:SS Zeitformat
 
 document.addEventListener('DOMContentLoaded', () => { 
   // Initialize Lucide icons first
@@ -16,7 +16,7 @@ async function boot() {
     giveaway: {
       status: 'INACTIVE', // INACTIVE, ACTIVE, PAUSED
       keyword: '!join',
-      duration: 0, // minutes
+      duration: 0, // seconds (converted from MM:SS)
       timeRemaining: 0, // seconds
       entries: 0,
       subsOnly: false,
@@ -33,10 +33,10 @@ async function boot() {
     settings: {
       // Load from localStorage with defaults
       keyword: localStorage.getItem('giveaway_keyword') || '!join',
-      duration: parseInt(localStorage.getItem('giveaway_duration')) || 5,
+      duration: localStorage.getItem('giveaway_duration_formatted') || '05:00', // MM:SS format
       durationMode: localStorage.getItem('giveaway_duration_mode') || 'manual',
       subsOnly: localStorage.getItem('giveaway_subs_only') === 'true',
-      autoJoinHost: localStorage.getItem('giveaway_auto_join_host') === 'true' // ✅ GEÄNDERT: Standardmäßig false, nur wenn explizit 'true' gespeichert
+      autoJoinHost: localStorage.getItem('giveaway_auto_join_host') === 'true'
     },
     winner: {
       currentWinner: null,
@@ -74,6 +74,8 @@ async function boot() {
     durationMode: document.getElementById('durationMode'),
     durationField: document.getElementById('durationField'),
     durationInput: document.getElementById('durationInput'),
+    timeUpBtn: document.querySelector('.time-up'),
+    timeDownBtn: document.querySelector('.time-down'),
     
     // Participants
     participantsList: document.getElementById('participantsList'),
@@ -91,34 +93,105 @@ async function boot() {
     toastContainer: document.getElementById('toastContainer')
   };
 
-  // Validation System (bleibt gleich)
-  const Validators = {
-    keyword: (keyword) => {
-      const kw = String(keyword || '').trim();
-      if (!kw) return { valid: false, error: 'Keyword cannot be empty' };
-      if (!kw.startsWith('!')) return { valid: false, error: 'Keyword must start with !' };
-      if (kw.length < 2) return { valid: false, error: 'Keyword too short' };
-      if (kw.length > 50) return { valid: false, error: 'Keyword too long' };
-      if (!/^![a-zA-Z0-9_-]+$/.test(kw)) return { valid: false, error: 'Invalid characters in keyword' };
-      return { valid: true };
+  // ===================== TIME FORMAT UTILITIES =====================
+  const TimeUtils = {
+    // Convert MM:SS string to seconds
+    formatToSeconds(timeStr) {
+      if (!timeStr || typeof timeStr !== 'string') return 300; // Default 5 minutes
+      
+      const parts = timeStr.split(':');
+      if (parts.length !== 2) return 300;
+      
+      const minutes = parseInt(parts[0], 10) || 0;
+      const seconds = parseInt(parts[1], 10) || 0;
+      
+      return (minutes * 60) + seconds;
     },
     
-    duration: (duration) => {
-      const dur = parseInt(duration);
-      if (isNaN(dur)) return { valid: false, error: 'Duration must be a number' };
-      if (dur < 1) return { valid: false, error: 'Duration must be at least 1 minute' };
-      if (dur > 60) return { valid: false, error: 'Duration cannot exceed 60 minutes' };
-      return { valid: true };
+    // Convert seconds to MM:SS string
+    secondsToFormat(totalSeconds) {
+      const minutes = Math.floor(Math.max(0, totalSeconds) / 60);
+      const seconds = Math.max(0, totalSeconds) % 60;
+      return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    },
+    
+    // Validate MM:SS format
+    validateFormat(timeStr) {
+      if (!timeStr || typeof timeStr !== 'string') return false;
+      
+      const pattern = /^[0-9]{1,2}:[0-5][0-9]$/;
+      if (!pattern.test(timeStr)) return false;
+      
+      const parts = timeStr.split(':');
+      const minutes = parseInt(parts[0], 10);
+      const seconds = parseInt(parts[1], 10);
+      
+      // Allow 0:10 to 60:00
+      return minutes >= 0 && minutes <= 60 && seconds >= 0 && seconds <= 59 && 
+             (minutes > 0 || seconds >= 10); // Minimum 10 seconds
+    },
+    
+    // Auto-format input while typing
+    autoFormat(input) {
+      let value = input.replace(/[^\d]/g, ''); // Remove non-digits
+      
+      if (value.length === 0) return '00:00';
+      if (value.length === 1) return `0${value}:00`;
+      if (value.length === 2) return `${value}:00`;
+      if (value.length === 3) return `${value.slice(0, 2)}:${value.slice(2, 3)}0`;
+      if (value.length >= 4) return `${value.slice(0, 2)}:${value.slice(2, 4)}`;
+      
+      return value;
+    },
+    
+    // Increment time by 10 seconds
+    incrementTime(timeStr, increment = 10) {
+      const seconds = this.formatToSeconds(timeStr);
+      const newSeconds = Math.min(3600, seconds + increment); // Max 60:00
+      return this.secondsToFormat(newSeconds);
+    },
+    
+    // Decrement time by 10 seconds
+    decrementTime(timeStr, decrement = 10) {
+      const seconds = this.formatToSeconds(timeStr);
+      const newSeconds = Math.max(10, seconds - decrement); // Min 0:10
+      return this.secondsToFormat(newSeconds);
     }
   };
 
-  // Enhanced Timer Management System (bleibt gleich)
+  // Validation System (erweitert für MM:SS)
+const Validators = {
+  keyword(keyword) {
+    const kw = String(keyword || '').trim();
+    if (!kw) return { valid: false, error: 'Keyword cannot be empty' };
+    if (kw.length < 1) return { valid: false, error: 'Keyword too short' };
+    if (kw.length > 25) return { valid: false, error: 'Keyword too long (max 50 characters)' };
+    if (!/^[!#@$%&*]?[a-zA-Z0-9_\s-]+$/.test(kw)) return { valid: false, error: 'Invalid characters in keyword' };
+    return { valid: true };
+  },
+  
+  duration(timeStr) {
+    if (!TimeUtils.validateFormat(timeStr)) {
+      return { valid: false, error: 'Invalid time format. Use MM:SS (e.g., 05:00)' };
+    }
+    
+    const seconds = TimeUtils.formatToSeconds(timeStr);
+    if (seconds < 10) return { valid: false, error: 'Duration must be at least 10 seconds' };
+    if (seconds > 3600) return { valid: false, error: 'Duration cannot exceed 60 minutes' };
+    
+    return { valid: true };
+  }
+};
+
+  // Enhanced Timer Management System (KORRIGIERT)
   const TimerManager = {
-    start(durationMinutes) {
+    start(durationSeconds) {
       this.stop();
       
-      AppState.giveaway.timeRemaining = durationMinutes * 60;
+      AppState.giveaway.timeRemaining = durationSeconds;
       AppState.giveaway.isTimedMode = true;
+      
+      console.log(`⏰ Timer started for ${durationSeconds} seconds (${TimeUtils.secondsToFormat(durationSeconds)})`);
       
       AppState.ui.timerInterval = setInterval(() => {
         if (AppState.giveaway.status === 'PAUSED') {
@@ -134,7 +207,6 @@ async function boot() {
       }, 1000);
       
       this.updateDisplay();
-      console.log(`⏰ Timer started for ${durationMinutes} minutes`);
     },
     
     stop() {
@@ -148,15 +220,15 @@ async function boot() {
     },
     
     pause() {
-      console.log('⏸️ Timer paused at:', this.formatTime(AppState.giveaway.timeRemaining));
+      console.log('⏸️ Timer paused at:', TimeUtils.secondsToFormat(AppState.giveaway.timeRemaining));
     },
     
     resume() {
-      console.log('▶️ Timer resumed at:', this.formatTime(AppState.giveaway.timeRemaining));
+      console.log('▶️ Timer resumed at:', TimeUtils.secondsToFormat(AppState.giveaway.timeRemaining));
     },
     
     updateDisplay() {
-      const timeString = this.formatTime(AppState.giveaway.timeRemaining);
+      const timeString = TimeUtils.secondsToFormat(AppState.giveaway.timeRemaining);
       
       if (elements.durationTag && AppState.giveaway.isTimedMode) {
         elements.durationTag.textContent = timeString;
@@ -170,35 +242,51 @@ async function boot() {
       }
     },
     
-    formatTime(seconds) {
-      const safeSeconds = Math.max(0, seconds);
-      const minutes = Math.floor(safeSeconds / 60);
-      const remainingSeconds = safeSeconds % 60;
-      return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-    },
-    
-    onTimerEnd() {
-      console.log('⏰ Timer ended - Auto-picking winner');
-      this.stop();
-      StateManager.updateStatus('INACTIVE');
+    // ✅ KORRIGIERT: Verbesserte Timer-Ende Logik
+    async onTimerEnd() {
+      console.log('⏰ Timer ended - Stopping timer and checking participants');
+      this.stop(); // Stoppe Timer sofort
       
-      setTimeout(() => {
-        if (AppState.giveaway.entries > 0) {
-          elements.pickBtn?.click();
-        } else {
-          UIManager.showToast('Giveaway ended - No participants to pick from', 'error');
-        }
-      }, 500);
+      // Prüfe aktuellen Status
+      if (AppState.giveaway.status !== 'ACTIVE') {
+        console.log('⚠️ Timer ended but giveaway not active, ignoring');
+        return;
+      }
+      
+      console.log(`📊 Timer ended with ${AppState.giveaway.entries} participants`);
+      
+      if (AppState.giveaway.entries > 0) {
+        console.log('🎯 Auto-picking winner due to timer end');
+        
+        // Setze Status auf PAUSED um weitere Teilnahmen zu verhindern
+        StateManager.updateStatus('PAUSED');
+        
+        // Kurze Verzögerung für UI Update, dann Winner ziehen
+        setTimeout(async () => {
+          try {
+            // Verwende die Server API für korrekten Winner Pick
+            await EventHandlers.pickWinner();
+          } catch (error) {
+            console.error('❌ Failed to pick winner on timer end:', error);
+            UIManager.showToast('Failed to pick winner automatically', 'error');
+            StateManager.updateStatus('INACTIVE');
+          }
+        }, 500);
+      } else {
+        console.log('❌ Timer ended with no participants');
+        StateManager.updateStatus('INACTIVE');
+        UIManager.showToast('Giveaway ended - No participants joined', 'error');
+      }
     }
   };
 
-  // Enhanced State Management System (bleibt gleich)
+  // Enhanced State Management System
   const StateManager = {
     updateStatus(newStatus, data = {}) {
       const oldStatus = AppState.giveaway.status;
       AppState.giveaway.status = newStatus;
       
-      console.log(`📱 Status changed: ${oldStatus} → ${newStatus}`, data);
+      console.log(`📄 Status changed: ${oldStatus} → ${newStatus}`, data);
       
       this.updateStatusDisplay();
       this.updateButtonStates();
@@ -310,8 +398,8 @@ async function boot() {
     onGiveawayStart(data) {
       this.updateParticipantsHeader();
       
-      if (data.duration && data.duration > 0 && AppState.giveaway.status !== 'PAUSED') {
-        TimerManager.start(data.duration);
+      if (data.durationSeconds && data.durationSeconds > 0 && AppState.giveaway.status !== 'PAUSED') {
+        TimerManager.start(data.durationSeconds);
       }
     },
     
@@ -369,21 +457,53 @@ async function boot() {
     }
   };
 
-  // Enhanced UI Management (bleibt gleich)
+  // Enhanced UI Management
   const UIManager = {
-    showResetConfirmation() {
-      if (elements.resetConfirmToast) {
-        elements.resetConfirmToast.classList.add('show');
-        console.log('⚠️ Reset confirmation shown');
-      }
-    },
-    
-    hideResetConfirmation() {
-      if (elements.resetConfirmToast) {
-        elements.resetConfirmToast.classList.remove('show');
-        console.log('⚠️ Reset confirmation hidden');
-      }
-    },
+showResetConfirmation() {
+  if (!elements.toastContainer) return;
+  
+  const resetToast = document.createElement('div');
+  resetToast.className = 'toast toast--danger reset-toast';
+  resetToast.id = 'activeResetToast';
+  resetToast.innerHTML = `
+    <div class="toast-content reset-content">
+      <i data-lucide="alert-triangle" aria-hidden="true"></i>
+      <span class="reset-text">Reset Giveaway?</span>
+      <div class="reset-actions">
+        <button id="confirmReset" class="btn btn--danger btn--small">
+          <i data-lucide="check" aria-hidden="true"></i>
+          Yes
+        </button>
+        <button id="cancelReset" class="btn btn--ghost btn--small">
+          <i data-lucide="x" aria-hidden="true"></i>
+          Cancel
+        </button>
+      </div>
+    </div>
+  `;
+  
+  elements.toastContainer.appendChild(resetToast);
+  lucide.createIcons(resetToast);
+  
+  // Event Listeners für die Buttons
+  resetToast.querySelector('#confirmReset').addEventListener('click', EventHandlers.confirmReset);
+  resetToast.querySelector('#cancelReset').addEventListener('click', () => {
+    this.hideResetConfirmation();
+    EventHandlers.cancelReset();
+  });
+  
+  setTimeout(() => resetToast.classList.add('toast--show'), 10);
+  console.log('⚠️ Reset confirmation shown in toast container');
+},
+
+hideResetConfirmation() {
+  const resetToast = document.getElementById('activeResetToast');
+  if (resetToast) {
+    resetToast.classList.remove('toast--show');
+    setTimeout(() => resetToast.remove(), 300);
+    console.log('⚠️ Reset confirmation hidden');
+  }
+},
     
     showToast(message, type = 'success') {
       if (!elements.toastContainer) return;
@@ -441,7 +561,7 @@ async function boot() {
 
     async loadSettings() {
       try {
-        console.log('🔄 Loading settings from server...');
+        console.log('⚙️ Loading settings from server...');
         
         // Lade Luck Settings
         const luckResponse = await fetch('/api/settings/luck');
@@ -454,7 +574,7 @@ async function boot() {
         const generalResponse = await fetch('/api/settings/general');
         if (generalResponse.ok) {
           this.currentSettings.general = await generalResponse.json();
-          console.log('⚙️ Loaded general settings:', this.currentSettings.general);
+          console.log('⚡️ Loaded general settings:', this.currentSettings.general);
         }
 
         this.updateSettingsUI();
@@ -464,7 +584,7 @@ async function boot() {
     },
 
     updateSettingsUI() {
-      console.log('🔄 Updating settings UI...');
+      console.log('⚙️ Updating settings UI...');
       
       // Update Bit Badge Sliders
       const bitSliders = document.querySelectorAll('[data-bits-range]');
@@ -639,35 +759,39 @@ async function boot() {
       }
     },
 
-    loadUISettings() {
-      if (elements.keywordInput) elements.keywordInput.value = AppState.settings.keyword;
-      if (elements.durationMode) elements.durationMode.value = AppState.settings.durationMode;
-      if (elements.durationInput) elements.durationInput.value = AppState.settings.duration;
-      
-      this.toggleDurationField();
-      
-      AppState.giveaway.keyword = AppState.settings.keyword;
-      StateManager.updateKeywordDisplay();
-    },
+loadUISettings() {
+  if (elements.keywordInput) elements.keywordInput.value = AppState.settings.keyword;
+  if (elements.durationMode) {
+    elements.durationMode.value = 'manual'; // ✅ KORRIGIERT: Immer Manual
+    AppState.settings.durationMode = 'manual';
+  }
+  if (elements.durationInput) elements.durationInput.value = AppState.settings.duration;
+  
+  this.toggleDurationField();
+  
+  AppState.giveaway.keyword = AppState.settings.keyword;
+  StateManager.updateKeywordDisplay();
+},
     
     saveSettingsToStorage() {
       localStorage.setItem('giveaway_keyword', AppState.settings.keyword);
-      localStorage.setItem('giveaway_duration', AppState.settings.duration);
+      localStorage.setItem('giveaway_duration_formatted', AppState.settings.duration);
       localStorage.setItem('giveaway_duration_mode', AppState.settings.durationMode);
       localStorage.setItem('giveaway_subs_only', AppState.settings.subsOnly);
       localStorage.setItem('giveaway_auto_join_host', AppState.settings.autoJoinHost);
     },
     
-    validateAndUpdateKeyword(keyword) {
-      const validation = Validators.keyword(keyword);
-      
-      if (!validation.valid) {
-        UIManager.showToast(validation.error, 'error');
-        return false;
-      }
-      
-      AppState.settings.keyword = keyword.toLowerCase();
-      this.saveSettingsToStorage();
+validateAndUpdateKeyword(keyword) {
+  const processedKeyword = String(keyword || '').trim();
+  
+  const validation = Validators.keyword(processedKeyword);
+  
+  if (!validation.valid) {
+    UIManager.showToast(validation.error, 'error');
+    return false;
+  }
+  
+  AppState.settings.keyword = processedKeyword.toLowerCase();
       
       if (AppState.giveaway.status === 'INACTIVE') {
         AppState.giveaway.keyword = AppState.settings.keyword;
@@ -677,15 +801,15 @@ async function boot() {
       return true;
     },
     
-    validateAndUpdateDuration(duration) {
-      const validation = Validators.duration(duration);
+    validateAndUpdateDuration(timeStr) {
+      const validation = Validators.duration(timeStr);
       
       if (!validation.valid) {
         UIManager.showToast(validation.error, 'error');
         return false;
       }
       
-      AppState.settings.duration = parseInt(duration);
+      AppState.settings.duration = timeStr;
       this.saveSettingsToStorage();
       return true;
     },
@@ -707,23 +831,24 @@ async function boot() {
     getStartSettings() {
       const keyword = elements.keywordInput?.value?.trim() || AppState.settings.keyword;
       const isTimedMode = elements.durationMode?.value === 'timed';
-      const duration = isTimedMode ? parseInt(elements.durationInput?.value || AppState.settings.duration) : 0;
+      const durationStr = isTimedMode ? (elements.durationInput?.value || AppState.settings.duration) : '00:00';
+      const durationSeconds = isTimedMode ? TimeUtils.formatToSeconds(durationStr) : 0;
       const subsOnly = AppState.settings.subsOnly;
-      const autoJoinHost = this.currentSettings.general.autoJoinHost;
+      const autoJoinHost = SettingsManager.currentSettings.general.autoJoinHost || false;
       
       if (!Validators.keyword(keyword).valid) {
         throw new Error('Invalid keyword settings');
       }
       
-      if (isTimedMode && !Validators.duration(duration).valid) {
+      if (isTimedMode && !Validators.duration(durationStr).valid) {
         throw new Error('Invalid duration settings');
       }
       
-      return { keyword, duration, subsOnly, autoJoinHost, isTimedMode };
+      return { keyword, durationSeconds, subsOnly, autoJoinHost, isTimedMode };
     }
   };
 
-  // Enhanced Winner Modal Functions (bleibt gleich)
+  // Enhanced Winner Modal Functions
   async function loadUserInfo(userId, login) {
     try {
       const response = await fetch(`/api/user-info/${userId}?login=${login}`);
@@ -778,35 +903,50 @@ async function boot() {
     }
   }
 
-  // Enhanced Event Handlers (bleibt gleich)
+  // Enhanced Event Handlers
   const EventHandlers = {
     async startGiveaway() {
-      if (AppState.ui.isStarting || AppState.giveaway.status === 'ACTIVE') {
-        console.log('🎫 Start already in progress or giveaway active');
-        return;
-      }
-      
-      AppState.ui.isStarting = true;
-      StateManager.updateButtonStates();
-      
-      try {
-        const settings = SettingsManager.getStartSettings();
+  if (AppState.ui.isStarting || AppState.giveaway.status === 'ACTIVE') {
+    console.log('🎬 Start already in progress or giveaway active');
+    return;
+  }
+  
+  // ✅ KORRIGIERT: Warte bis Settings vollständig geladen sind
+  if (!SettingsManager.currentSettings || !SettingsManager.currentSettings.general) {
+    console.log('⏳ Settings not loaded yet, waiting...');
+    UIManager.showToast('Please wait for settings to load', 'error');
+    return;
+  }
+  
+  AppState.ui.isStarting = true;
+  StateManager.updateButtonStates();
+  
+  try {
+    const settings = SettingsManager.getStartSettings();
         console.log('🎬 Starting giveaway with settings:', settings);
         
-        const res = await fetch('/api/giveaway/start', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(settings)
-        });
+// ✅ KORRIGIERT: Verwende aktuelle Settings für autoJoinHost
+const currentAutoJoin = SettingsManager.currentSettings.general.autoJoinHost || false;
+
+const res = await fetch('/api/giveaway/start', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    keyword: settings.keyword,
+    duration: Math.floor(settings.durationSeconds / 60), // Convert to minutes for server
+    subsOnly: settings.subsOnly,
+    autoJoinHost: currentAutoJoin
+  })
+});
         
         if (res.ok) {
           AppState.giveaway.keyword = settings.keyword;
-          AppState.giveaway.duration = settings.duration;
+          AppState.giveaway.duration = settings.durationSeconds;
           AppState.giveaway.subsOnly = settings.subsOnly;
           AppState.giveaway.autoJoinHost = settings.autoJoinHost;
           AppState.giveaway.isTimedMode = settings.isTimedMode;
           
-          StateManager.updateStatus('ACTIVE', settings);
+          StateManager.updateStatus('ACTIVE', { durationSeconds: settings.durationSeconds });
           UIManager.showToast('Giveaway started successfully!');
         } else {
           throw new Error('Failed to start giveaway');
@@ -832,7 +972,7 @@ async function boot() {
           endpoint = '/api/giveaway/resume';
           actionName = 'resume';
         } else {
-          console.log('🎫 Cannot pause/resume - giveaway not active');
+          console.log('🎬 Cannot pause/resume - giveaway not active');
           return;
         }
         
@@ -858,7 +998,11 @@ async function boot() {
     },
     
     async pickWinner() {
-      if (AppState.ui.isPicking) return;
+      if (AppState.ui.isPicking) {
+        console.log('🎯 Pick already in progress, ignoring');
+        return;
+      }
+      
       if (AppState.giveaway.entries === 0) {
         UIManager.showToast('No participants to pick from!', 'error');
         return;
@@ -868,17 +1012,40 @@ async function boot() {
       StateManager.updateButtonStates();
       
       try {
-        const res = await fetch('/api/giveaway/end', { method: 'POST' });
+        console.log(`🏆 Picking winner from ${AppState.giveaway.entries} participants`);
+        
+        const res = await fetch('/api/giveaway/end', { 
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(`Server error: ${res.status} - ${errorData.error || 'Unknown error'}`);
+        }
+        
         const data = await res.json();
         
         if (data.winner) {
+          console.log('🎉 Winner selected:', data.winner.displayName || data.winner.login);
           StateManager.updateStatus('INACTIVE');
+          UIManager.showToast(`Winner selected: ${data.winner.displayName || data.winner.login}!`, 'success');
         } else if (data.error === 'no_participants') {
+          console.log('❌ No participants error from server');
           UIManager.showToast('No participants to pick from!', 'error');
+          StateManager.updateStatus('INACTIVE');
+        } else {
+          throw new Error('Unexpected response from server');
         }
       } catch (e) {
         console.error('❌ Pick winner failed:', e);
-        UIManager.showToast('Failed to pick winner', 'error');
+        UIManager.showToast('Failed to pick winner: ' + e.message, 'error');
+        // Bei Fehler zurück zu ACTIVE oder PAUSED je nach vorherigem Status
+        if (AppState.giveaway.isTimedMode && AppState.giveaway.timeRemaining > 0) {
+          StateManager.updateStatus('ACTIVE');
+        } else {
+          StateManager.updateStatus('INACTIVE');
+        }
       } finally {
         AppState.ui.isPicking = false;
         StateManager.updateButtonStates();
@@ -919,7 +1086,80 @@ async function boot() {
     }
   };
 
-  // Enhanced Winner Modal Functions (bleibt gleich)
+  // Time Input Event Handlers
+  const TimeInputHandlers = {
+    initializeTimeInput() {
+      if (!elements.durationInput) return;
+      
+      // Format input on blur
+      elements.durationInput.addEventListener('blur', (e) => {
+        let value = e.target.value.trim();
+        
+        if (!value) {
+          value = '05:00';
+        } else if (!TimeUtils.validateFormat(value)) {
+          // Try to auto-format if possible
+          value = TimeUtils.autoFormat(value) || '05:00';
+        }
+        
+        e.target.value = value;
+        SettingsManager.validateAndUpdateDuration(value);
+      });
+      
+      // Real-time validation feedback
+      elements.durationInput.addEventListener('input', (e) => {
+        const value = e.target.value;
+        const validation = Validators.duration(value);
+        
+        e.target.classList.toggle('valid', validation.valid);
+        e.target.classList.toggle('invalid', !validation.valid);
+      });
+      
+      // Handle arrow key navigation and formatting
+      elements.durationInput.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          
+          const currentValue = e.target.value || '05:00';
+          let newValue;
+          
+          if (e.key === 'ArrowUp') {
+            newValue = TimeUtils.incrementTime(currentValue, 10);
+          } else {
+            newValue = TimeUtils.decrementTime(currentValue, 10);
+          }
+          
+          e.target.value = newValue;
+          SettingsManager.validateAndUpdateDuration(newValue);
+          
+          // Trigger visual feedback
+          e.target.classList.add('valid');
+          e.target.classList.remove('invalid');
+        }
+      });
+      
+      // Initialize up/down buttons
+      if (elements.timeUpBtn) {
+        elements.timeUpBtn.addEventListener('click', () => {
+          const currentValue = elements.durationInput.value || '05:00';
+          const newValue = TimeUtils.incrementTime(currentValue, 10);
+          elements.durationInput.value = newValue;
+          SettingsManager.validateAndUpdateDuration(newValue);
+        });
+      }
+      
+      if (elements.timeDownBtn) {
+        elements.timeDownBtn.addEventListener('click', () => {
+          const currentValue = elements.durationInput.value || '05:00';
+          const newValue = TimeUtils.decrementTime(currentValue, 10);
+          elements.durationInput.value = newValue;
+          SettingsManager.validateAndUpdateDuration(newValue);
+        });
+      }
+    }
+  };
+
+  // Enhanced Winner Modal Functions
   async function showWinnerModal(winner) {
     const existingModal = document.querySelector('.modal--show');
     if (existingModal) {
@@ -930,7 +1170,7 @@ async function boot() {
     const confettiContainer = document.getElementById('confettiContainer');
     if (confettiContainer) {
       confettiContainer.innerHTML = '';
-      console.log('🎹 Cleared previous confetti');
+      console.log('🎉 Cleared previous confetti');
     }
     
     AppState.winner.currentWinner = winner;
@@ -1111,10 +1351,11 @@ async function boot() {
     
     // Timer NUR bei echtem Start (mit duration) neu starten
     if (status.duration !== undefined && oldStatus === 'INACTIVE') {
-      console.log('⏰ Starting new timer with duration:', status.duration);
-      if (status.duration > 0) {
+      const durationSeconds = status.duration * 60; // Convert minutes to seconds
+      console.log('⏰ Starting new timer with duration:', durationSeconds, 'seconds');
+      if (durationSeconds > 0) {
         AppState.giveaway.isTimedMode = true;
-        TimerManager.start(status.duration);
+        TimerManager.start(durationSeconds);
       } else {
         AppState.giveaway.isTimedMode = false;
         TimerManager.stop();
@@ -1123,7 +1364,7 @@ async function boot() {
     
     // Bei Resume ohne duration wird Timer einfach fortgesetzt
     if (oldStatus === 'PAUSED' && newStatus === 'ACTIVE' && !status.duration) {
-      console.log('▶️ Resume - Timer continues from:', TimerManager.formatTime(AppState.giveaway.timeRemaining));
+      console.log('▶️ Resume - Timer continues from:', TimeUtils.secondsToFormat(AppState.giveaway.timeRemaining));
     }
   });
   
@@ -1220,7 +1461,7 @@ async function boot() {
     }
   });
 
-  // Event Listeners (bleibt gleich)
+  // Event Listeners
   elements.startBtn?.addEventListener('click', () => {
     if (AppState.giveaway.status === 'PAUSED') {
       EventHandlers.pauseResumeGiveaway();
@@ -1251,15 +1492,8 @@ async function boot() {
     SettingsManager.toggleDurationField();
   });
   
-  elements.durationInput?.addEventListener('blur', (e) => {
-    SettingsManager.validateAndUpdateDuration(e.target.value);
-  });
-  
-  elements.durationInput?.addEventListener('input', (e) => {
-    const validation = Validators.duration(e.target.value);
-    e.target.classList.toggle('valid', validation.valid);
-    e.target.classList.toggle('invalid', !validation.valid);
-  });
+  // Initialize time input handlers
+  TimeInputHandlers.initializeTimeInput();
 
   // ===================== INITIALIZE USER UND LOAD DATA =====================
   try {
@@ -1304,11 +1538,17 @@ async function boot() {
   }
 
   // Initialize Settings and State
-  SettingsManager.loadUISettings();
-  await SettingsManager.loadSettings();
-  SettingsManager.initializeSliderEvents();
-  StateManager.updateStatus('INACTIVE');
-  StateManager.updateEntriesDisplay();
+ SettingsManager.loadUISettings();
+await SettingsManager.loadSettings();
+SettingsManager.initializeSliderEvents();
+// ✅ KORRIGIERT: Forciere Manual Mode nach dem Laden
+if (elements.durationMode) {
+  elements.durationMode.value = 'manual';
+  AppState.settings.durationMode = 'manual';
+}
+SettingsManager.toggleDurationField();
+StateManager.updateStatus('INACTIVE');
+StateManager.updateEntriesDisplay();
 
   // Load initial data
   try {
@@ -1437,7 +1677,7 @@ async function boot() {
       
       setTimeout(() => {
         StateManager.updateEntriesDisplay();
-        console.log('🗂️ Participants list cleared with animation');
+        console.log('🗑️ Participants list cleared with animation');
       }, participants.length * 50 + 200);
     }
   }
@@ -1570,7 +1810,7 @@ async function boot() {
   function updateParticipantCount() {
     const allParticipants = elements.participantsList ? elements.participantsList.children.length : 0;
     
-    console.log('📈 Updating participant count:', allParticipants);
+    console.log('📊 Updating participant count:', allParticipants);
     AppState.giveaway.entries = allParticipants;
     StateManager.updateEntriesDisplay();
     
@@ -1644,7 +1884,7 @@ async function boot() {
       });
       
       if (existing) {
-        console.log('🔨 Skipping duplicate message:', ev.user, ev.text);
+        console.log('💬 Skipping duplicate message:', ev.user, ev.text);
         return;
       }
     }
@@ -1799,9 +2039,10 @@ async function boot() {
     }
   });
 
-  console.log('🎬 Enhanced ZinxyBot Dashboard fully initialized with FIXED luck multipliers!');
+  console.log('🎬 Enhanced ZinxyBot Dashboard fully initialized with MM:SS time format!');
   console.log('🔐 User authentication and session isolation active');
-  console.log('🎲 Luck multiplier display corrected - always shows X.XXx format');
+  console.log('⏰ Timer-end bug fixed - participants will be correctly picked');
+  console.log('🕐 MM:SS time format implemented with 10-second increments');
 }
 
 function escapeHtml(s) {
