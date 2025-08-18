@@ -145,12 +145,23 @@
         <div class="field" id="durationField" style="display: none;">
           <label for="durationInput">
             <i data-lucide="timer" aria-hidden="true"></i>
-            Duration (minutes)
+            Duration
           </label>
-          <input id="durationInput" type="number" min="1" max="60" step="1" value="5" 
-                 aria-describedby="duration-help" />
+          <div class="time-input-container">
+            <input id="durationInput" type="text" placeholder="05:00" value="05:00" 
+                   aria-describedby="duration-help" pattern="^[0-9]{1,2}:[0-5][0-9]$" 
+                   maxlength="5" class="time-input" />
+            <div class="time-controls">
+              <button type="button" class="time-btn time-up" aria-label="Increase time">
+                <i data-lucide="chevron-up"></i>
+              </button>
+              <button type="button" class="time-btn time-down" aria-label="Decrease time">
+                <i data-lucide="chevron-down"></i>
+              </button>
+            </div>
+          </div>
           <div id="duration-help" class="validation-message">
-            Duration must be between 1 and 60 minutes
+            Format: MM:SS (e.g., 05:00 for 5 minutes). Use ↑↓ for 10-second steps.
           </div>
         </div>
       </section>
@@ -378,32 +389,6 @@
     </div>
   </div>
 
-  <!-- Reset Confirmation Toast -->
-  <div id="resetConfirmToast" class="reset-confirm-toast" role="dialog" aria-labelledby="reset-title" aria-hidden="true">
-    <div class="reset-confirm-content">
-      <div class="reset-confirm-icon" aria-hidden="true">
-        <i data-lucide="alert-triangle"></i>
-      </div>
-      <div class="reset-confirm-text">
-        <h3 id="reset-title">Reset Giveaway?</h3>
-        <p>This will clear all participants and reset the giveaway. This action cannot be undone.</p>
-        <div class="reset-confirm-actions">
-          <button id="confirmReset" class="btn btn--danger" aria-describedby="reset-warning">
-            <i data-lucide="check" aria-hidden="true"></i>
-            Yes, Reset
-          </button>
-          <button id="cancelReset" class="btn btn--ghost">
-            <i data-lucide="x" aria-hidden="true"></i>
-            Cancel
-          </button>
-        </div>
-        <div id="reset-warning" class="sr-only">
-          Warning: This action will permanently delete all current participants
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Enhanced Toast Container -->
   <div id="toastContainer" class="toast-container" aria-live="polite" aria-label="Notifications"></div>
 
@@ -413,7 +398,7 @@
     <div id="error-announcements" aria-live="assertive" aria-atomic="true"></div>
   </div>
 
-  <footer class="footer"> 2025 zinxybot.net - All rights reserved.</footer>
+  <footer class="footer">© 2025 zinxybot.net - All rights reserved.</footer>
   
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
@@ -461,6 +446,71 @@
       font-weight: 500;
       margin-left: 1rem;
       flex-shrink: 0;
+    }
+
+    /* Time Input Styling */
+    .time-input-container {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .time-input {
+      flex: 1;
+      padding-right: 40px !important;
+      font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+      font-weight: 600;
+      text-align: center;
+      letter-spacing: 0.5px;
+    }
+
+    .time-controls {
+      position: absolute;
+      right: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .time-btn {
+      background: var(--bg-soft);
+      border: 1px solid rgba(255,255,255,.1);
+      color: var(--muted);
+      border-radius: 4px;
+      width: 24px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      padding: 0;
+    }
+
+    .time-btn:hover {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .time-btn i {
+      width: 12px;
+      height: 12px;
+    }
+
+    .time-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(169,112,255,.1);
+    }
+
+    .time-input.invalid {
+      border-color: var(--danger);
+      box-shadow: 0 0 0 3px rgba(239,68,68,.1);
+    }
+
+    .time-input.valid {
+      border-color: var(--success);
+      box-shadow: 0 0 0 3px rgba(34,197,94,.1);
     }
   </style>
 </body>
