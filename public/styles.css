@@ -1,4 +1,4 @@
-/* DATEI: styles.css - VOLLSTÄNDIG RESPONSIVE MIT ERWEITERTEN BADGE UND EMOTE STYLES */
+/* DATEI: styles.css - VOLLSTÃ„NDIG RESPONSIVE MIT ERWEITERTEN BADGE UND EMOTE STYLES */
 
 :root{
   --bg:#0f1117;
@@ -154,7 +154,7 @@ body{
   }
 }
 
-/* Emote-Qualität basierend auf Bildschirmgröße */
+/* Emote-QualitÃ¤t basierend auf BildschirmgrÃ¶ÃŸe */
 @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
   .chat-emote.emote-twitch {
     content:url(attrdata-2x);
@@ -390,8 +390,9 @@ body{
 }
 
 .btn--success {
-  background:linear-gradient(135deg, var(--success), #16a34a);
-  box-shadow:0 6px 18px rgba(34,197,94,.25);
+  background: linear-gradient(135deg, var(--success), #16a34a) !important;
+  box-shadow: 0 6px 18px rgba(34,197,94,.25) !important;
+  color: white !important;
 }
 
 .btn--warn {
@@ -774,7 +775,7 @@ body{
   height:16px;
 }
 
-/* Layout - VOLLSTÄNDIG RESPONSIVE */
+/* Layout - VOLLSTÃ„NDIG RESPONSIVE */
 main.view{
   display:none; 
   flex:1; 
@@ -1617,16 +1618,19 @@ h3{
   } 
 }
 
-.slider-field{
-  background:var(--bg-soft);
-  border:var(--border);
-  border-radius:10px;
-  padding:12px;
-  display:grid;
-  gap:8px;
-  min-height:70px;
-  min-width:260px;
-  flex-shrink:0;
+.slider-field {
+  background: var(--bg-soft);
+  border: var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-height: 70px;
+  min-width: 260px;
+  flex-shrink: 0;
+  align-items: stretch;
 }
 
 .slider-field label{
@@ -2040,22 +2044,26 @@ h3{
 }
 
 /* Reset Confirmation Toast */
-.reset-confirm-toast{
-  position:fixed;
-  bottom:80px;
-  left:20px;
-  z-index:2100;
-  background:var(--bg-elev);
-  border:2px solid var(--danger);
-  border-radius:12px;
-  padding:16px;
-  box-shadow:0 10px 30px rgba(0,0,0,.6);
-  min-width:350px;
-  max-width:400px;
-  transform:translateX(-100%);
-  opacity:0;
-  transition:all .3s cubic-bezier(0.4, 0, 0.2, 1);
-  pointer-events:auto;
+.reset-confirm-toast {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  z-index: 2100;
+  background: var(--bg-elev);
+  border: 2px solid var(--danger);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.6);
+  transform: translateX(-100%);
+  opacity: 0;
+  transition: all .3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: auto;
+}
+
+.reset-confirm-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .reset-confirm-toast.show{
@@ -2301,4 +2309,83 @@ h3{
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+.meta code {
+  background: #2a2d3a;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  /* ✅ KORRIGIERT: Keyword Umbruch */
+  word-break: break-all;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-width: 150px;
+  display: inline-block;
+  white-space: pre-wrap;
+  line-height: 1.3;
+}
+
+.slider-field label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #d9d9df;
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.slider-field input[type=range] {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #2a2d3a;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin: 4px 0;
+}
+
+.toast--danger {
+  border-left: 4px solid var(--danger);
+}
+
+.toast--danger::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--danger), #dc2626);
+  box-shadow: 0 0 10px var(--danger);
+}
+
+.reset-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+
+.reset-text {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.reset-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.btn--small {
+  padding: 6px 10px;
+  font-size: 12px;
+  min-height: 28px;
 }
