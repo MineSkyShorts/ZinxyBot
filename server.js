@@ -1,4 +1,4 @@
-// ===================== KORRIGIERTER SERVER.JS - VOLLSTÄNDIG UND OHNE MOD/VIP BONUS =====================
+// ===================== KORRIGIERTER SERVER.JS - VOLLSTÃ„NDIG UND OHNE MOD/VIP BONUS =====================
 import express from 'express';
 import session from 'express-session';
 import axios from 'axios';
@@ -40,11 +40,11 @@ let ffzEmotes = new Map();
 
 // ===================== TEXT EMOTES MAPPING ===================== 
 const textEmotes = {
-  ':)': '😊', ':(': '😞', ':D': '😃', ':P': '😛', ':p': '😛',
-  ':|': '😐', ':/': '😕', ':\\': '😕', ':o': '😮', ':O': '😮',
-  ';)': '😉', ';P': '😜', ':3': '😊', '<3': '❤️', '</3': '💔',
-  'xD': '🤣', 'XD': '🤣', ':*': '😘', '8)': '😎', 'B)': '😎',
-  ':>': '😊', '<3': '❤️', 'o_O': '😳', 'O_o': '😳', '-_-': '😑'
+  ':)': 'ðŸ˜Š', ':(': 'ðŸ˜ž', ':D': 'ðŸ˜ƒ', ':P': 'ðŸ˜›', ':p': 'ðŸ˜›',
+  ':|': 'ðŸ˜', ':/': 'ðŸ˜•', ':\\': 'ðŸ˜•', ':o': 'ðŸ˜®', ':O': 'ðŸ˜®',
+  ';)': 'ðŸ˜‰', ';P': 'ðŸ˜œ', ':3': 'ðŸ˜Š', '<3': 'â¤ï¸', '</3': 'ðŸ’”',
+  'xD': 'ðŸ¤£', 'XD': 'ðŸ¤£', ':*': 'ðŸ˜˜', '8)': 'ðŸ˜Ž', 'B)': 'ðŸ˜Ž',
+  ':>': 'ðŸ˜Š', '<3': 'â¤ï¸', 'o_O': 'ðŸ˜³', 'O_o': 'ðŸ˜³', '-_-': 'ðŸ˜‘'
 };
 
 // ===================== TWITCH API URLs =====================
@@ -82,7 +82,7 @@ function getUserSession(userId) {
         ]
       },
       generalSettings: {
-        autoJoinHost: false, // ✅ GEÄNDERT: Auto-join standardmäßig AUS
+        autoJoinHost: false, // âœ… GEÃ„NDERT: Auto-join standardmÃ¤ÃŸig AUS
         antispam: true
       },
       spamTracker: new Map(),
@@ -102,7 +102,7 @@ function cleanupUserSession(userId) {
       session.tmiClient.disconnect();
     }
     userSessions.delete(userId);
-    console.log(`🧹 Cleaned up session for user ${userId}`);
+    console.log(`ðŸ§¹ Cleaned up session for user ${userId}`);
   }
 }
 
@@ -110,7 +110,7 @@ function cleanupUserSession(userId) {
 const socketUserMap = new Map();
 
 io.on('connection', (socket) => {
-  console.log('🔌 Client connected:', socket.id);
+  console.log('ðŸ”Œ Client connected:', socket.id);
   
   socket.on('auth', (userId) => {
     if (userId) {
@@ -119,7 +119,7 @@ io.on('connection', (socket) => {
       userSession.socketIds.add(socket.id);
       
       sendUserSpecificData(socket, userId);
-      console.log(`✅ Socket ${socket.id} authenticated for user ${userId}`);
+      console.log(`âœ… Socket ${socket.id} authenticated for user ${userId}`);
     }
   });
   
@@ -139,7 +139,7 @@ io.on('connection', (socket) => {
       }
       
       socketUserMap.delete(socket.id);
-      console.log(`🔌 Socket ${socket.id} disconnected for user ${userId}`);
+      console.log(`ðŸ”Œ Socket ${socket.id} disconnected for user ${userId}`);
     }
   });
 });
@@ -174,7 +174,7 @@ function sendUserSpecificData(socket, userId) {
 // ===================== EMOTE LOADER FUNKTIONEN =====================
 async function loadGlobalEmotes(accessToken) {
   try {
-    console.log('🔍 Loading global Twitch emotes...');
+    console.log('ðŸ” Loading global Twitch emotes...');
     const response = await axios.get(`${TWITCH_API}/chat/emotes/global`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -193,15 +193,15 @@ async function loadGlobalEmotes(accessToken) {
       });
     });
     
-    console.log(`✅ Loaded ${globalEmotes.size} global Twitch emotes`);
+    console.log(`âœ… Loaded ${globalEmotes.size} global Twitch emotes`);
   } catch (error) {
-    console.error('❌ Failed to load global emotes:', error.message);
+    console.error('âŒ Failed to load global emotes:', error.message);
   }
 }
 
 async function loadChannelEmotes(channelId, accessToken, userId) {
   try {
-    console.log(`📺 Loading channel emotes for ${channelId}...`);
+    console.log(`ðŸ“º Loading channel emotes for ${channelId}...`);
     const response = await axios.get(`${TWITCH_API}/chat/emotes`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -222,15 +222,15 @@ async function loadChannelEmotes(channelId, accessToken, userId) {
       });
     });
     
-    console.log(`✅ Loaded ${userSession.channelEmotes.size} channel emotes for ${channelId}`);
+    console.log(`âœ… Loaded ${userSession.channelEmotes.size} channel emotes for ${channelId}`);
   } catch (error) {
-    console.error('❌ Failed to load channel emotes:', error.message);
+    console.error('âŒ Failed to load channel emotes:', error.message);
   }
 }
 
 async function loadBTTVEmotes(channelId = null) {
   try {
-    console.log('🎭 Loading BTTV emotes...');
+    console.log('ðŸŽ­ Loading BTTV emotes...');
     
     const globalResponse = await axios.get('https://api.betterttv.net/3/cached/emotes/global');
     bttvEmotes.clear();
@@ -274,15 +274,15 @@ async function loadBTTVEmotes(channelId = null) {
       }
     }
     
-    console.log(`✅ Loaded ${bttvEmotes.size} BTTV emotes`);
+    console.log(`âœ… Loaded ${bttvEmotes.size} BTTV emotes`);
   } catch (error) {
-    console.error('❌ Failed to load BTTV emotes:', error.message);
+    console.error('âŒ Failed to load BTTV emotes:', error.message);
   }
 }
 
 async function loadFFZEmotes(channelId = null) {
   try {
-    console.log('🐸 Loading FrankerFaceZ emotes...');
+    console.log('ðŸ¸ Loading FrankerFaceZ emotes...');
     
     const globalResponse = await axios.get('https://api.frankerfacez.com/v1/set/global');
     ffzEmotes.clear();
@@ -321,16 +321,16 @@ async function loadFFZEmotes(channelId = null) {
       }
     }
     
-    console.log(`✅ Loaded ${ffzEmotes.size} FFZ emotes`);
+    console.log(`âœ… Loaded ${ffzEmotes.size} FFZ emotes`);
   } catch (error) {
-    console.error('❌ Failed to load FFZ emotes:', error.message);
+    console.error('âŒ Failed to load FFZ emotes:', error.message);
   }
 }
 
 // ===================== BADGE LOADER FUNKTIONEN =====================
 async function loadGlobalBadges(accessToken) {
   try {
-    console.log('🏆 Loading global badges...');
+    console.log('ðŸ† Loading global badges...');
     const response = await axios.get(`${TWITCH_API}/chat/badges/global`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -355,17 +355,17 @@ async function loadGlobalBadges(accessToken) {
     });
     
     globalBadges = badgeData;
-    console.log('✅ Global badges loaded:', Object.keys(globalBadges).length, 'sets');
+    console.log('âœ… Global badges loaded:', Object.keys(globalBadges).length, 'sets');
     return badgeData;
   } catch (error) {
-    console.error('❌ Failed to load global badges:', error.message);
+    console.error('âŒ Failed to load global badges:', error.message);
     return {};
   }
 }
 
 async function loadChannelBadges(channelId, accessToken, userId) {
   try {
-    console.log(`📺 Loading channel badges for ${channelId}...`);
+    console.log(`ðŸ“º Loading channel badges for ${channelId}...`);
     const response = await axios.get(`${TWITCH_API}/chat/badges`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -393,10 +393,10 @@ async function loadChannelBadges(channelId, accessToken, userId) {
     const userSession = getUserSession(userId);
     userSession.channelBadges = badgeData;
     
-    console.log(`✅ Channel badges loaded for ${channelId}:`, Object.keys(badgeData).length, 'sets');
+    console.log(`âœ… Channel badges loaded for ${channelId}:`, Object.keys(badgeData).length, 'sets');
     return badgeData;
   } catch (error) {
-    console.error('❌ Failed to load channel badges:', error.message);
+    console.error('âŒ Failed to load channel badges:', error.message);
     return {};
   }
 }
@@ -412,13 +412,13 @@ async function loadUserProfileImage(userId, accessToken) {
     });
     if (response.data.data && response.data.data.length > 0) {
       const profileUrl = response.data.data[0].profile_image_url;
-      console.log(`✅ Profile image loaded for ${userId}`);
+      console.log(`âœ… Profile image loaded for ${userId}`);
       return profileUrl;
     }
-    console.log(`⚠️ No profile image found for user ${userId}`);
+    console.log(`âš ï¸ No profile image found for user ${userId}`);
     return null;
   } catch (error) {
-    console.error(`❌ Failed to load profile image for user ${userId}:`, error.message);
+    console.error(`âŒ Failed to load profile image for user ${userId}:`, error.message);
     return null;
   }
 }
@@ -485,7 +485,7 @@ function parseBadges(tags, userId = null) {
       }
     }
   } catch (error) {
-    console.error('❌ Error parsing badges:', error.message);
+    console.error('âŒ Error parsing badges:', error.message);
   }
   
   return badges;
@@ -633,7 +633,7 @@ function parseNativeTwitchEmotes(text, emotes) {
     
     return result;
   } catch (error) {
-    console.error('❌ Error parsing native Twitch emotes:', error.message);
+    console.error('âŒ Error parsing native Twitch emotes:', error.message);
     return text;
   }
 }
@@ -680,60 +680,60 @@ function computeLuckFromTags(tags, userId) {
     badgeInfo = String(badgeInfo || '');
   }
 
-  console.log(`🎯 Computing luck for user with badges: ${badges}, badge-info: ${badgeInfo}`);
+  console.log(`ðŸŽ¯ Computing luck for user with badges: ${badges}, badge-info: ${badgeInfo}`);
 
-  // ✅ KORRIGIERTE BIT BADGES LOGIK
+  // âœ… KORRIGIERTE BIT BADGES LOGIK
   const bitsMatch = badges.match(/bits\/(\d+)/);
   if (bitsMatch) {
     const bitAmount = parseInt(bitsMatch[1]);
-    console.log(`💎 Found bits badge with amount: ${bitAmount}`);
+    console.log(`ðŸ’Ž Found bits badge with amount: ${bitAmount}`);
     
-    // Finde die höchste passende Tier (von groß zu klein)
+    // Finde die hÃ¶chste passende Tier (von groÃŸ zu klein)
     for (const tier of userSession.luckSettings.bits.slice().reverse()) {
       if (bitAmount >= tier.min) {
         totalLuck *= tier.mult;
-        console.log(`💎 Applied bits multiplier: ${tier.mult}x for ${tier.min}+ bits`);
+        console.log(`ðŸ’Ž Applied bits multiplier: ${tier.mult}x for ${tier.min}+ bits`);
         break;
       }
     }
   }
 
-  // ✅ KORRIGIERTE SUBSCRIBER BADGES LOGIK
+  // âœ… KORRIGIERTE SUBSCRIBER BADGES LOGIK
   if (badges.includes('subscriber/') || badges.includes('founder/')) {
     // Suche nach subscriber Monaten in badge-info
     const subMatch = badgeInfo.match(/subscriber\/(\d+)/);
     if (subMatch) {
       const subMonths = parseInt(subMatch[1]);
-      console.log(`👑 Found subscriber with ${subMonths} months`);
+      console.log(`ðŸ‘‘ Found subscriber with ${subMonths} months`);
       
-      // Finde die höchste passende Tier (von groß zu klein)
+      // Finde die hÃ¶chste passende Tier (von groÃŸ zu klein)
       for (const tier of userSession.luckSettings.subs.slice().reverse()) {
         if (subMonths >= tier.min) {
           totalLuck *= tier.mult;
-          console.log(`👑 Applied sub multiplier: ${tier.mult}x for ${tier.min}+ months`);
+          console.log(`ðŸ‘‘ Applied sub multiplier: ${tier.mult}x for ${tier.min}+ months`);
           break;
         }
       }
     } else {
-      // Fallback für neue Subscriber ohne badge-info
+      // Fallback fÃ¼r neue Subscriber ohne badge-info
       const defaultSubTier = userSession.luckSettings.subs.find(tier => tier.min === 1);
       if (defaultSubTier) {
         totalLuck *= defaultSubTier.mult;
-        console.log(`👑 Applied default sub multiplier: ${defaultSubTier.mult}x`);
+        console.log(`ðŸ‘‘ Applied default sub multiplier: ${defaultSubTier.mult}x`);
       }
     }
   }
 
-  // ✅ ENTFERNT: Keine Bonusse mehr für Moderator/VIP/Broadcaster
+  // âœ… ENTFERNT: Keine Bonusse mehr fÃ¼r Moderator/VIP/Broadcaster
   // Nur Bits und Subscriber Badges bekommen Multiplier
 
   const finalLuck = Math.round(totalLuck * 100) / 100;
-  console.log(`🎲 Final luck calculated: ${finalLuck}x`);
+  console.log(`ðŸŽ² Final luck calculated: ${finalLuck}x`);
 
   return finalLuck;
 }
 
-// ✅ KORRIGIERTE MULTIPLIER TEXT FUNKTION
+// âœ… KORRIGIERTE MULTIPLIER TEXT FUNKTION
 function getMultiplierText(luck) {
   // Immer mit 2 Dezimalstellen anzeigen, mindestens 1.00x
   const formattedLuck = Math.max(1.0, luck).toFixed(2);
@@ -792,7 +792,7 @@ class GiveawayManager {
     this.spamBlockedUsers = new Set();
     this.duration = 0;
     this.subsOnly = false;
-    this.autoJoinHost = false; // ✅ GEÄNDERT: Standardmäßig AUS
+    this.autoJoinHost = false; // âœ… GEÃ„NDERT: StandardmÃ¤ÃŸig AUS
     this.startTime = null;
   }
 
@@ -850,7 +850,7 @@ class GiveawayManager {
     this.spamBlockedUsers.clear();
     this.duration = 0;
     this.subsOnly = false;
-    this.autoJoinHost = false; // ✅ GEÄNDERT: Standardmäßig AUS
+    this.autoJoinHost = false; // âœ… GEÃ„NDERT: StandardmÃ¤ÃŸig AUS
     this.startTime = null;
   }
 
@@ -938,9 +938,9 @@ class GiveawayManager {
     return participant;
   }
 
-  // ✅ KORRIGIERTE UPDATE PARTICIPANTS LUCK FUNKTION
+  // âœ… KORRIGIERTE UPDATE PARTICIPANTS LUCK FUNKTION
   updateParticipantsLuck(userId) {
-    console.log(`🔄 Updating luck for ${this.participants.size} participants`);
+    console.log(`ðŸ”„ Updating luck for ${this.participants.size} participants`);
     
     for (const [login, participant] of this.participants.entries()) {
       // Rekonstruiere Tags aus participant data
@@ -954,8 +954,8 @@ class GiveawayManager {
       
       const newLuck = computeLuckFromTags(mockTags, userId);
       
-      if (Math.abs(newLuck - participant.luck) > 0.01) { // Nur update wenn signifikante Änderung
-        console.log(`🎲 Updating ${login} luck from ${participant.luck} to ${newLuck}`);
+      if (Math.abs(newLuck - participant.luck) > 0.01) { // Nur update wenn signifikante Ã„nderung
+        console.log(`ðŸŽ² Updating ${login} luck from ${participant.luck} to ${newLuck}`);
         participant.luck = newLuck;
         participant.multiplierText = getMultiplierText(newLuck);
         this.participants.set(login, participant);
@@ -1124,7 +1124,7 @@ async function ensureTmiClient(sessionData, userId) {
   });
 
   await userSession.tmiClient.connect();
-  console.log(`✅ TMI client connected for user ${userId}`);
+  console.log(`âœ… TMI client connected for user ${userId}`);
   return userSession.tmiClient;
 }
 
@@ -1198,7 +1198,7 @@ app.get('/api/user-info/:userId', async (req, res) => {
     
     res.json(userInfo);
   } catch (e) {
-    console.error('❌ User info API error:', e);
+    console.error('âŒ User info API error:', e);
     res.status(500).json({ error: 'Failed to get user info' });
   }
 });
@@ -1245,7 +1245,7 @@ app.post('/api/giveaway/start', async (req, res) => {
 
     res.json({ ok: true });
   } catch (e) {
-    console.error('❌ Giveaway start failed:', e);
+    console.error('âŒ Giveaway start failed:', e);
     res.status(500).json({ error: 'start_failed' });
   }
 });
@@ -1376,21 +1376,21 @@ app.put('/api/settings/luck', (req, res) => {
   const userSession = getUserSession(userId);
   const { enabled, bits, subs } = req.body || {};
   
-  console.log(`💾 Saving luck settings for user ${userId}:`, { enabled, bits: bits?.length, subs: subs?.length });
+  console.log(`ðŸ’¾ Saving luck settings for user ${userId}:`, { enabled, bits: bits?.length, subs: subs?.length });
   
   if (typeof enabled === 'boolean') userSession.luckSettings.enabled = enabled;
   if (Array.isArray(bits)) {
     const validBits = bits.filter(b => typeof b.min === 'number' && typeof b.mult === 'number');
     userSession.luckSettings.bits = validBits.sort((a, b) => a.min - b.min);
-    console.log(`💎 Updated bits settings:`, userSession.luckSettings.bits);
+    console.log(`ðŸ’Ž Updated bits settings:`, userSession.luckSettings.bits);
   }
   if (Array.isArray(subs)) {
     const validSubs = subs.filter(s => typeof s.min === 'number' && typeof s.mult === 'number');
     userSession.luckSettings.subs = validSubs.sort((a, b) => a.min - b.min);
-    console.log(`👑 Updated subs settings:`, userSession.luckSettings.subs);
+    console.log(`ðŸ‘‘ Updated subs settings:`, userSession.luckSettings.subs);
   }
   
-  // ✅ WICHTIG: Aktualisiere alle existing participants
+  // âœ… WICHTIG: Aktualisiere alle existing participants
   userSession.giveaway.updateParticipantsLuck(userId);
   
   emitToUser(userId, 'settings:luck_updated', userSession.luckSettings);
@@ -1530,7 +1530,7 @@ app.post('/api/chat/send', async (req, res) => {
 
     res.json({ ok: true });
   } catch (e) {
-    console.error('❌ Chat send error:', e?.message);
+    console.error('âŒ Chat send error:', e?.message);
     res.status(500).json({ error: 'send_failed' });
   }
 });
@@ -1550,7 +1550,7 @@ app.post('/api/chat/connect', async (req, res) => {
     
     res.json({ ok: true, channel: ch, connected: true });
   } catch (e) {
-    console.error('❌ Chat connect failed:', e?.message);
+    console.error('âŒ Chat connect failed:', e?.message);
     res.status(500).json({ error: 'connect_failed', message: e?.message });
   }
 });
@@ -1572,7 +1572,7 @@ app.get('/dashboard', (req, res) => {
 
 // ===================== ENHANCED SOCKET.IO EVENTS =====================
 io.on('connection', (socket) => {
-  console.log('🔌 Client connected:', socket.id);
+  console.log('ðŸ”Œ Client connected:', socket.id);
   
   socket.on('connect', () => {
     socket.emit('status', 'ok');
@@ -1602,7 +1602,7 @@ io.on('connection', (socket) => {
       }
       
       socketUserMap.delete(socket.id);
-      console.log(`🔌 Socket ${socket.id} disconnected for user ${userId}`);
+      console.log(`ðŸ”Œ Socket ${socket.id} disconnected for user ${userId}`);
     }
     socket.emit('status', 'err');
   });
@@ -1618,7 +1618,7 @@ io.on('connection', (socket) => {
       userSession.socketIds.add(socket.id);
       
       sendUserSpecificData(socket, userId);
-      console.log(`✅ Socket ${socket.id} authenticated for user ${userId}`);
+      console.log(`âœ… Socket ${socket.id} authenticated for user ${userId}`);
     }
   });
   
@@ -1642,9 +1642,9 @@ io.on('connection', (socket) => {
 // ===================== SERVER START =====================
 const port = process.env.PORT || 3000;
 server.listen(port, () => {
-  console.log(`🏆 ZinxyBot server running on http://localhost:${port}`);
-  console.log('🎯 Ready for user-specific giveaways with FIXED luck multipliers!');
-  console.log('✅ Each user now has their own isolated session and data');
-  console.log('🎲 Luck calculation: ONLY Bits and Subscriber badges get multipliers');
-  console.log('❌ NO bonuses for Moderator/VIP/Broadcaster badges');
+  console.log(`ðŸ† ZinxyBot server running on http://localhost:${port}`);
+  console.log('ðŸŽ¯ Ready for user-specific giveaways with FIXED luck multipliers!');
+  console.log('âœ… Each user now has their own isolated session and data');
+  console.log('ðŸŽ² Luck calculation: ONLY Bits and Subscriber badges get multipliers');
+  console.log('âŒ NO bonuses for Moderator/VIP/Broadcaster badges');
 });
