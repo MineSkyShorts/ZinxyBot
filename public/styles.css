@@ -1603,11 +1603,14 @@ h3{
   gap:16px;
   flex:1;
   overflow-y:auto;
+  overflow-x:hidden;
   padding-right:4px;
   height:auto;
   min-height:auto;
   scrollbar-width:thin;
   scrollbar-color:var(--accent) var(--bg-soft);
+  /* Bessere Touch-Scrolling auf Mobile */
+  -webkit-overflow-scrolling:touch;
 }
 
 .settings-wrap::-webkit-scrollbar{
@@ -2734,5 +2737,96 @@ h3{
   
   .rightbar{
     order:unset !important;
+  }
+}
+
+/* ===================== EINHEITLICHE SCROLLBAR STYLES FÜR ALLE BEREICHE ===================== */
+/* Globale Scrollbar-Basis */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) var(--bg-soft);
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+  background: transparent;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--bg-soft);
+  border-radius: 3px;
+  margin: 4px 0;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-2);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--bg-soft);
+}
+
+/* Spezifische Bereiche */
+.participants,
+.chat,
+.settings-wrap,
+.participants-container {
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) var(--bg-soft);
+}
+
+.participants::-webkit-scrollbar,
+.chat::-webkit-scrollbar,
+.settings-wrap::-webkit-scrollbar,
+.participants-container::-webkit-scrollbar {
+  width: 6px;
+  background: transparent;
+}
+
+.participants::-webkit-scrollbar-track,
+.chat::-webkit-scrollbar-track,
+.settings-wrap::-webkit-scrollbar-track,
+.participants-container::-webkit-scrollbar-track {
+  background: var(--bg-soft);
+  border-radius: 3px;
+  margin: 4px 0;
+}
+
+.participants::-webkit-scrollbar-thumb,
+.chat::-webkit-scrollbar-thumb,
+.settings-wrap::-webkit-scrollbar-thumb,
+.participants-container::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+.participants::-webkit-scrollbar-thumb:hover,
+.chat::-webkit-scrollbar-thumb:hover,
+.settings-wrap::-webkit-scrollbar-thumb:hover,
+.participants-container::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-2);
+}
+
+/* Mobile Scrollbar Anpassungen */
+@media (max-width: 768px) {
+  * {
+    scrollbar-width: thin;
+  }
+  
+  *::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  
+  *::-webkit-scrollbar-thumb {
+    border-radius: 2px;
   }
 }
