@@ -720,7 +720,7 @@ hideResetConfirmation() {
 
         if (luckResponse.ok && generalResponse.ok) {
           if (saveButton) {
-            saveButton.classList.remove('loading');
+            saveButton.classList.remove('loading', 'btn--primary');
             saveButton.classList.add('btn--success');
             if (saveText) saveText.textContent = 'Saved!';
             if (saveIcon) saveIcon.setAttribute('data-lucide', 'check');
@@ -735,7 +735,7 @@ hideResetConfirmation() {
           setTimeout(() => {
             if (saveButton) {
               saveButton.disabled = false;
-              saveButton.classList.remove('btn--success');
+              // Keep the button green (success state)
               if (saveText) saveText.textContent = 'Save Settings';
               if (saveIcon) saveIcon.setAttribute('data-lucide', 'save');
               lucide.createIcons(saveButton);
@@ -752,6 +752,7 @@ hideResetConfirmation() {
         if (saveButton) {
           saveButton.disabled = false;
           saveButton.classList.remove('loading');
+          // Keep original button styling (should be btn--success)
           if (saveText) saveText.textContent = 'Save Settings';
           if (saveIcon) saveIcon.setAttribute('data-lucide', 'save');
           lucide.createIcons(saveButton);
@@ -1284,6 +1285,45 @@ const res = await fetch('/api/giveaway/start', {
     if (!header.status) return;
     header.status.className = `status ${cls || ''}`;
   }
+
+  // ===================== TWITCH-STYLE CHAT WRAPPING UTILITY =====================
+  function checkMessageWrap(messageRow) {
+    const msgContent = messageRow.querySelector('.msg-content');
+    const msgText = messageRow.querySelector('.msg-text');
+    
+    if (!msgContent || !msgText) return;
+    
+    // Get the container width
+    const msgElement = messageRow.querySelector('.msg');
+    if (!msgElement) return;
+    
+    // Ensure we start with inline layout
+    msgContent.classList.remove('wrap-text');
+    
+    // Allow layout to settle before measuring
+    requestAnimationFrame(() => {
+      try {
+        // Get available width (minus padding)
+        const availableWidth = msgElement.clientWidth - 20;
+        
+        // Measure the total content width when inline
+        const totalWidth = msgContent.scrollWidth;
+        
+        // If content overflows, wrap to new line like Twitch
+        if (totalWidth > availableWidth) {
+          msgContent.classList.add('wrap-text');
+        }
+      } catch (error) {
+        console.debug('Message wrap check failed:', error);
+      }
+    });
+  }
+
+  // Handle window resize to re-evaluate message wrapping
+  window.addEventListener('resize', () => {
+    const messages = document.querySelectorAll('.chat .msg');
+    messages.forEach(msg => checkMessageWrap(msg));
+  });
 
   // ===================== INITIALIZE SOCKET.IO MIT AUTHENTICATION =====================
   const socket = io();
@@ -1934,6 +1974,10 @@ StateManager.updateEntriesDisplay();
       </div>
     `);
     elements.chatList.appendChild(row);
+    
+    // Check if message should wrap like Twitch
+    checkMessageWrap(row);
+    
     elements.chatList.scrollTop = elements.chatList.scrollHeight;
   });
 
