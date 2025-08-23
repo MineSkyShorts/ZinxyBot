@@ -348,13 +348,17 @@ body{
 /* Emote-Qualität basierend auf Bildschirmgröße */
 @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
   .chat-emote.emote-twitch {
-    content:url(attrdata-2x);
+    /* High-resolution emote styling - content property removed as it was invalid */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
   }
 }
 
 @media (-webkit-min-device-pixel-ratio: 3), (min-resolution: 288dpi) {
   .chat-emote.emote-twitch {
-    content:url(attrdata-4x);
+    /* Ultra high-resolution emote styling - content property removed as it was invalid */
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
   }
 }
 
@@ -754,12 +758,12 @@ body{
   box-shadow:0 0 0 3px rgba(169,112,255,.1);
 }
 
-.field input:invalid, .field input.invalid {
+.field input:invalid:focus, .field input.invalid:focus {
   border-color:var(--danger);
   box-shadow:0 0 0 3px rgba(239,68,68,.1);
 }
 
-.field input.valid {
+.field input.valid:focus {
   border-color:var(--success);
   box-shadow:0 0 0 3px rgba(34,197,94,.1);
 }
@@ -1470,13 +1474,14 @@ h3{
 }
 
 .keyword-hint {
-  display:flex;
+  display:inline-flex;
   align-items:center;
   gap:6px;
   font-size:13px;
   color:var(--muted);
   font-weight:500;
   margin-left:12px;
+  white-space:nowrap;
 }
 
 .keyword-hint code {
@@ -2556,12 +2561,12 @@ h3{
   box-shadow:0 0 0 3px rgba(169,112,255,.1);
 }
 
-.time-input.invalid {
+.time-input.invalid:focus {
   border-color:var(--danger);
   box-shadow:0 0 0 3px rgba(239,68,68,.1);
 }
 
-.time-input.valid {
+.time-input.valid:focus {
   border-color:var(--success);
   box-shadow:0 0 0 3px rgba(34,197,94,.1);
 }
