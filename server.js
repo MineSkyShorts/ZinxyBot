@@ -217,12 +217,7 @@ const textEmotes = {
 };
 
 // ===================== TWITCH API URLs =====================
-const TWITCH_AUTH = 'https://id.twitch.tv/oauth2/authorize';
-const TWITCH_TOKEN = 'https://id.twitch.tv/oauth2/token';
 const TWITCH_API = 'https://api.twitch.tv/helix';
-
-// ===================== BASE SCOPES =====================
-const BASE_SCOPES = ['chat:read','chat:edit','channel:read:subscriptions','bits:read','moderator:read:followers','user:read:emotes'];
 
 // ===================== BENUTZERSPEZIFISCHE SESSION MANAGEMENT =====================
 function getUserSession(userId) {
@@ -1783,61 +1778,8 @@ async function ensureTmiClient(sessionData, userId) {
   return userSession.tmiClient;
 }
 
-// ===================== AUTH ROUTES =====================
-app.get('/auth/twitch', (req, res) => {
-  // Einfacher OAuth-Flow ohne komplexe State-Validierung
-  const state = crypto.randomBytes(8).toString('hex'); // Kürzerer State
-  const authUrl = `${TWITCH_AUTH}?client_id=${process.env.TWITCH_CLIENT_ID}&redirect_uri=${process.env.TWITCH_REDIRECT_URI}&response_type=code&scope=${BASE_SCOPES.join(' ')}&state=${state}`;
-  res.redirect(authUrl);
-});
-
-app.get('/auth/twitch/callback', async (req, res) => {
-  try {
-    const { code, state } = req.query;
-    
-    // Nur grundlegende Validierung
-    if (!code) {
-      return res.status(400).send('OAuth error: No authorization code received.');
-    }
-    
-    // Exchange code for tokens - Einfacher Ansatz
-    const body = new URLSearchParams({
-      client_id: process.env.TWITCH_CLIENT_ID,
-      client_secret: process.env.TWITCH_CLIENT_SECRET,
-      code,
-      grant_type: 'authorization_code',
-      redirect_uri: process.env.TWITCH_REDIRECT_URI
-    });
-    
-    const { data: tokens } = await axios.post(TWITCH_TOKEN, body.toString(), { 
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' } 
-    });
-    
-    req.session.twitch = { access_token: tokens.access_token, refresh_token: tokens.refresh_token };
-
-    // Get user information
-    const { data: u } = await axios.get(`${TWITCH_API}/users`, { 
-      headers: { 
-        'Client-Id': process.env.TWITCH_CLIENT_ID, 
-        Authorization: `Bearer ${tokens.access_token}` 
-      } 
-    });
-    
-    const me = u.data[0];
-    req.session.user = { 
-      id: me.id, 
-      login: me.login, 
-      display_name: me.display_name, 
-      profile_image_url: me.profile_image_url, 
-      color: '#a970ff' 
-    };
-
-    res.redirect(process.env.DEFAULT_REDIRECT_AFTER_LOGIN || '/dashboard');
-  } catch (e) {
-    console.error('OAuth error:', e.response?.data || e.message);
-    res.status(500).send('OAuth failed. Please try again.');
-  }
-});
+// ===================== AUTH ROUTES REMOVED =====================
+// OAuth wird von Twitch direkt gehandhabt
 
 // Debug route for development (remove in production)
 app.get('/debug/session', (req, res) => {
