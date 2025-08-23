@@ -1439,7 +1439,87 @@ const res = await fetch('/api/giveaway/start', {
   });
 
   // ===================== EMOTE ENHANCEMENT FUNCTIONS =====================
-  function enhanceEmotesInMessage(messageElement) {
+  function renderEmotesInText(textElement, emotes) {
+    console.log(`🔍 renderEmotesInText called with:`, { emotes: emotes, textContent: textElement.textContent });
+    
+    if (!emotes || emotes.length === 0) {
+      console.log(`⚠️ No emotes to render`);
+      return;
+    }
+    
+    let html = textElement.textContent;
+    console.log(`📝 Original text: "${html}"`);
+    
+    // Sort emotes by position (descending) to avoid position shifts
+    const sortedEmotes = emotes.sort((a, b) => b.start - a.start);
+    console.log(`🎯 Sorted emotes:`, sortedEmotes);
+    
+    // Replace text with emote images
+    sortedEmotes.forEach(emote => {
+      const emoteName = emote.name;
+      const regex = new RegExp(`\\b${escapeRegExp(emoteName)}\\b`, 'g');
+      
+      console.log(`🔎 Looking for "${emoteName}" in text`);
+      if (regex.test(html)) {
+        console.log(`✅ Found "${emoteName}" - replacing with image`);
+      } else {
+        console.log(`❌ "${emoteName}" not found in text`);
+      }
+      
+      const replacement = `<img src="${escapeHtml(emote.url)}" alt="${escapeHtml(emoteName)}" class="chat-emote emote-${escapeHtml(emote.provider)}" title="${escapeHtml(emoteName)} (${escapeHtml(emote.provider.toUpperCase())})" loading="lazy" onerror="this.style.display='none'">`;
+      
+      html = html.replace(regex, replacement);
+    });
+    
+    console.log(`🎭 Final HTML: "${html}"`);
+    textElement.innerHTML = html;
+    
+    console.log(`✅ Rendered ${emotes.length} emotes in message`);
+  }
+  
+  function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  
+  function escapeHtml(unsafe) {
+    return unsafe
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function enhanceEmotesInMessage(messageElement, emotes = []) {
+    const textElement = messageElement.querySelector('.msg-text');
+    if (!textElement) return;
+    
+    // First: Clean up any existing IMG tags that might be showing as text
+    let textContent = textElement.textContent || textElement.innerText || '';
+    
+    // Remove any HTML img tags that appear as text
+    textContent = textContent.replace(/<img[^>]*>/g, '');
+    
+    // If we have emote data from server, use that
+    if (emotes && emotes.length > 0) {
+      console.log(`🎭 Using emote data from server:`, emotes);
+      textElement.textContent = textContent; // Set clean text first
+      renderEmotesInText(textElement, emotes);
+      return;
+    }
+    
+    // Fallback: Try to parse any HTML img tags if they exist
+    const htmlContent = textElement.innerHTML;
+    if (htmlContent.includes('<img') && htmlContent.includes('chat-emote')) {
+      console.log(`🔄 Found HTML emotes, keeping them as-is`);
+      // HTML emotes are already there, just enhance them
+      return;
+    }
+    
+    // Set clean text if no emotes
+    textElement.textContent = textContent;
+    
+    // Enhanced handling for any existing emote images
     const emoteImages = messageElement.querySelectorAll('img.chat-emote');
     
     emoteImages.forEach(img => {
@@ -2558,6 +2638,8 @@ StateManager.updateEntriesDisplay();
     console.group('💬 Chat Nachricht');
     console.log('Zeige Chat-Nachricht:', {
       user: name,
+      message: msg,
+      emotes: ev.emotes,
       badgeCount: (ev.badges || []).length,
       badges: (ev.badges || []).map(b => b.name),
       luck: ev.luck,
@@ -2581,8 +2663,8 @@ StateManager.updateEntriesDisplay();
     `);
     elements.chatList.appendChild(row);
     
-    // Enhance emotes in the message
-    enhanceEmotesInMessage(row);
+    // Enhance emotes in the message with emote data from server
+    enhanceEmotesInMessage(row, ev.emotes);
     
     // Check if message should wrap like Twitch
     checkMessageWrap(row);
