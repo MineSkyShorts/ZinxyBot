@@ -25,7 +25,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; connect-src 'self' wss: ws: https: http:; font-src 'self' data:;");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: http:; connect-src 'self' wss: ws: https: http:; font-src 'self' data: https://fonts.gstatic.com;");
   next();
 });
 
@@ -313,9 +313,11 @@ io.on('connection', (socket) => {
     
     const userSession = getUserSession(userId);
     
-    console.log(`Test-Teilnehmer anfrage von User ${userId}, Admin: ${userSession.isAdmin}`);
-    // Only allow if user has admin privileges
-    if (!userSession.isAdmin) {
+    console.log(`Test-Teilnehmer anfrage von User ${userId}, Admin: ${userSession.isAdmin}, NODE_ENV: ${process.env.NODE_ENV}`);
+    // Allow test participants in development or for admin users
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    console.log(`Berechtigung prüfen: isAdmin=${userSession.isAdmin}, isDevelopment=${isDevelopment}`);
+    if (!userSession.isAdmin && !isDevelopment) {
       console.warn(`Unauthorized test participant attempt by ${userId}`);
       return;
     }
@@ -342,6 +344,13 @@ io.on('connection', (socket) => {
       isTestParticipant: true
     };
     
+    console.log(`📝 Test-Teilnehmer erstellt:`, {
+      login: participant.login,
+      displayName: participant.displayName,
+      profileImageUrl: participant.profileImageUrl,
+      luck: participant.luck
+    });
+    
     // Add to both participants maps to ensure proper winner selection
     userSession.giveaway.participants.set(login, participant);
     userSession.giveaway.entries = userSession.giveaway.participants.size;
@@ -350,12 +359,13 @@ io.on('connection', (socket) => {
     userSession.socketIds.forEach(socketId => {
       const targetSocket = io.sockets.sockets.get(socketId);
       if (targetSocket) {
+        console.log(`📡 Sende participant:add Event für ${participant.login} an Socket ${socketId}`);
         targetSocket.emit('participant:add', participant);
       }
     });
     
-    console.log(`Test-Teilnehmer hinzugefügt: ${participant.login} (Glück: ${participant.luck}x)`);
-    console.log(`Aktuelle Teilnehmer-Anzahl: ${userSession.giveaway.participants.size}`);
+    console.log(`✅ Test-Teilnehmer hinzugefügt: ${participant.login} (Glück: ${participant.luck}x)`);
+    console.log(`📊 Aktuelle Teilnehmer-Anzahl: ${userSession.giveaway.participants.size}`);
   });
   
   socket.on('disconnect', () => {
@@ -1881,9 +1891,16 @@ async function ensureTmiClient(sessionData, userId) {
 
 // ===================== AUTH ROUTES =====================
 app.get('/auth/twitch', (req, res) => {
+  // Dynamische Redirect URI basierend auf Request-Host
+  const protocol = req.get('x-forwarded-proto') || req.protocol;
+  const host = req.get('host');
+  const redirectUri = process.env.TWITCH_REDIRECT_URI || `${protocol}://${host}/auth/twitch/callback`;
+  
+  console.log(`🔗 Twitch OAuth Redirect: ${redirectUri}`);
+  
   // Einfacher OAuth-Flow ohne komplexe State-Validierung
   const state = crypto.randomBytes(8).toString('hex'); // Kürzerer State
-  const authUrl = `${TWITCH_AUTH}?client_id=${process.env.TWITCH_CLIENT_ID}&redirect_uri=${process.env.TWITCH_REDIRECT_URI}&response_type=code&scope=${BASE_SCOPES.join(' ')}&state=${state}`;
+  const authUrl = `${TWITCH_AUTH}?client_id=${process.env.TWITCH_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=${BASE_SCOPES.join(' ')}&state=${state}`;
   res.redirect(authUrl);
 });
 
@@ -1896,13 +1913,20 @@ app.get('/auth/twitch/callback', async (req, res) => {
       return res.status(400).send('OAuth error: No authorization code received.');
     }
     
+    // Gleiche dynamische Redirect URI wie beim Auth-Start
+    const protocol = req.get('x-forwarded-proto') || req.protocol;
+    const host = req.get('host');
+    const redirectUri = process.env.TWITCH_REDIRECT_URI || `${protocol}://${host}/auth/twitch/callback`;
+    
+    console.log(`🔄 Twitch OAuth Callback: ${redirectUri}`);
+    
     // Exchange code for tokens - Einfacher Ansatz
     const body = new URLSearchParams({
       client_id: process.env.TWITCH_CLIENT_ID,
       client_secret: process.env.TWITCH_CLIENT_SECRET,
       code,
       grant_type: 'authorization_code',
-      redirect_uri: process.env.TWITCH_REDIRECT_URI
+      redirect_uri: redirectUri
     });
     
     const { data: tokens } = await axios.post(TWITCH_TOKEN, body.toString(), { 
@@ -2274,6 +2298,7 @@ app.get('/api/emotes/all', (req, res) => {
         provider: 'Twitch',
         url: emote.url,
         url_2x: emote.url_2x || emote.url,
+        animated: emote.animated || false,
         global: true
       });
     });
@@ -2286,6 +2311,7 @@ app.get('/api/emotes/all', (req, res) => {
           provider: 'Twitch',
           url: emote.url,
           url_2x: emote.url_2x || emote.url,
+          animated: emote.animated || false,
           global: false
         });
       });
@@ -2298,6 +2324,7 @@ app.get('/api/emotes/all', (req, res) => {
         provider: 'BTTV',
         url: emote.url,
         url_2x: emote.url_2x || emote.url,
+        animated: emote.animated || false,
         global: true
       });
     });
@@ -2309,6 +2336,7 @@ app.get('/api/emotes/all', (req, res) => {
         provider: 'FFZ',
         url: emote.url,
         url_2x: emote.url_2x || emote.url,
+        animated: emote.animated || false,
         global: true
       });
     });
@@ -2320,6 +2348,7 @@ app.get('/api/emotes/all', (req, res) => {
         provider: '7TV',
         url: emote.url,
         url_2x: emote.url_2x || emote.url,
+        animated: emote.animated || false,
         global: true
       });
     });
@@ -2379,6 +2408,7 @@ app.get('/api/emotes/search', (req, res) => {
             provider: provider,
             url: emote.url,
             url_2x: emote.url_2x || emote.url,
+            animated: emote.animated || false,
             score: score
           });
         }
