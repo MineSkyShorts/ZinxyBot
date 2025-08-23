@@ -150,6 +150,17 @@ body{
   filter: grayscale(100%);
 }
 
+/* Animated Emote Styles */
+.chat-emote.emote-animated {
+  animation: none; /* Remove any default animations */
+  /* The GIF will handle its own animation */
+}
+
+.chat-emote.emote-animated:hover {
+  transform: scale(1.2); /* Slightly bigger hover for animated emotes */
+  filter: brightness(1.15);
+}
+
 /* Emote Popup */
 .emote-popup {
   position: fixed;
