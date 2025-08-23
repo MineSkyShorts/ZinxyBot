@@ -19,14 +19,43 @@ const server = http.createServer(app);
 const io = new SocketIOServer(server);
 
 // ===================== MIDDLEWARE =====================
-app.use(express.json());
+// Security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; connect-src 'self' wss: ws: https: http:; font-src 'self' data:;");
+  next();
+});
+
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
+// Validate session secret in production
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret || sessionSecret === 'your-secret-key') {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('SECURITY WARNING: SESSION_SECRET environment variable must be set in production!');
+    process.exit(1);
+  } else {
+    console.warn('WARNING: Using default session secret in development. Set SESSION_SECRET environment variable.');
+  }
+}
+
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key',
+  secret: sessionSecret || crypto.randomBytes(32).toString('hex'),
   resave: false,
-  saveUninitialized: false,
-  cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 }
+  saveUninitialized: true, // Ermöglicht Session-Erstellung vor Login
+  cookie: { 
+    secure: false, // Für Development auf false setzen
+    maxAge: 24 * 60 * 60 * 1000,
+    httpOnly: true,
+    sameSite: 'lax' // Weniger restriktiv für OAuth-Redirects
+  }
 }));
+
+// ===================== ADMIN USER IDs =====================
+const ADMIN_USER_IDS = ['659450187', '487354230']; // Twitch User IDs for automatic admin privileges
 
 // ===================== BENUTZERSPEZIFISCHE DATENSTRUKTUREN =====================
 const userSessions = new Map();
@@ -37,6 +66,146 @@ let globalBadges = {};
 let globalEmotes = new Map();
 let bttvEmotes = new Map();
 let ffzEmotes = new Map();
+let seventvEmotes = new Map();
+
+// Emote cache to prevent repeated API calls
+const emoteCache = {
+  lastUpdated: {
+    global: 0,
+    bttv: 0,
+    ffz: 0,
+    seventv: 0
+  },
+  CACHE_DURATION: 5 * 60 * 1000, // 5 minutes
+  
+  shouldRefresh(provider) {
+    const now = Date.now();
+    return (now - this.lastUpdated[provider]) > this.CACHE_DURATION;
+  },
+  
+  markUpdated(provider) {
+    this.lastUpdated[provider] = Date.now();
+  }
+};
+
+// Per-user emote cache
+const userEmoteCache = new Map();
+const USER_EMOTE_CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
+
+// Rate limiting for user emote requests
+const rateLimitQueue = new Map();
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 10; // Max 10 requests per minute per user
+
+class UserEmoteManager {
+  static checkRateLimit(requesterUserId) {
+    const now = Date.now();
+    
+    if (!rateLimitQueue.has(requesterUserId)) {
+      rateLimitQueue.set(requesterUserId, []);
+    }
+    
+    const requests = rateLimitQueue.get(requesterUserId);
+    
+    // Remove old requests outside the window
+    const validRequests = requests.filter(time => (now - time) < RATE_LIMIT_WINDOW);
+    rateLimitQueue.set(requesterUserId, validRequests);
+    
+    // Check if we're at the limit
+    if (validRequests.length >= MAX_REQUESTS_PER_WINDOW) {
+      console.log(`Rate-Limit erreicht für Benutzer ${requesterUserId}`);
+      return false;
+    }
+    
+    // Add current request
+    validRequests.push(now);
+    rateLimitQueue.set(requesterUserId, validRequests);
+    return true;
+  }
+  
+  static async getUserEmotes(userId, accessToken, requesterUserId) {
+    const cacheKey = `${userId}_${requesterUserId}`;
+    const cached = userEmoteCache.get(cacheKey);
+    
+    // Return cached data if still valid
+    if (cached && (Date.now() - cached.timestamp) < USER_EMOTE_CACHE_DURATION) {
+      return cached.emotes;
+    }
+    
+    // Check rate limiting
+    if (!UserEmoteManager.checkRateLimit(requesterUserId)) {
+      return cached ? cached.emotes : new Map();
+    }
+    
+    try {
+      
+      const response = await axios.get(`${TWITCH_API}/chat/emotes/user`, {
+        headers: {
+          'Client-Id': process.env.TWITCH_CLIENT_ID,
+          'Authorization': `Bearer ${accessToken}`
+        },
+        params: { user_id: userId },
+        timeout: 5000
+      });
+      
+      const emoteMap = new Map();
+      response.data.data.forEach(emote => {
+        
+        emoteMap.set(emote.name, {
+          id: emote.id,
+          name: emote.name,
+          url: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/1.0`,
+          url_2x: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/2.0`,
+          url_4x: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/3.0`,
+          provider: 'twitch-user',
+          emoteType: emote.emote_type || 'unknown',
+          tier: emote.tier || null,
+          setId: emote.emote_set_id || null
+        });
+      });
+      
+      // Cache the result
+      userEmoteCache.set(cacheKey, {
+        emotes: emoteMap,
+        timestamp: Date.now()
+      });
+      
+      return emoteMap;
+      
+    } catch (error) {
+      console.error(`Fehler beim Laden der Benutzer-Emotes für ${userId}:`, error.message);
+      
+      // Return cached emotes if available, even if expired
+      return cached ? cached.emotes : new Map();
+    }
+  }
+  
+  static cleanupCache() {
+    const now = Date.now();
+    
+    // Clean up user emote cache
+    for (const [key, data] of userEmoteCache.entries()) {
+      if ((now - data.timestamp) > USER_EMOTE_CACHE_DURATION) {
+        userEmoteCache.delete(key);
+      }
+    }
+    
+    // Clean up rate limit queue
+    for (const [userId, requests] of rateLimitQueue.entries()) {
+      const validRequests = requests.filter(time => (now - time) < RATE_LIMIT_WINDOW);
+      if (validRequests.length === 0) {
+        rateLimitQueue.delete(userId);
+      } else {
+        rateLimitQueue.set(userId, validRequests);
+      }
+    }
+  }
+}
+
+// Clean up user emote cache every 30 minutes
+setInterval(() => {
+  UserEmoteManager.cleanupCache();
+}, 30 * 60 * 1000);
 
 // ===================== TEXT EMOTES MAPPING ===================== 
 const textEmotes = {
@@ -53,7 +222,7 @@ const TWITCH_TOKEN = 'https://id.twitch.tv/oauth2/token';
 const TWITCH_API = 'https://api.twitch.tv/helix';
 
 // ===================== BASE SCOPES =====================
-const BASE_SCOPES = ['chat:read','chat:edit','channel:read:subscriptions','bits:read','moderator:read:followers'];
+const BASE_SCOPES = ['chat:read','chat:edit','channel:read:subscriptions','bits:read','moderator:read:followers','user:read:emotes'];
 
 // ===================== BENUTZERSPEZIFISCHE SESSION MANAGEMENT =====================
 function getUserSession(userId) {
@@ -89,7 +258,8 @@ function getUserSession(userId) {
       tmiClient: null,
       channelBadges: {},
       channelEmotes: new Map(),
-      socketIds: new Set()
+      socketIds: new Set(),
+      isAdmin: ADMIN_USER_IDS.includes(userId)
     });
   }
   return userSessions.get(userId);
@@ -102,25 +272,87 @@ function cleanupUserSession(userId) {
       session.tmiClient.disconnect();
     }
     userSessions.delete(userId);
-    console.log(`ðŸ§¹ Cleaned up session for user ${userId}`);
   }
 }
 
 // ===================== SOCKET MANAGEMENT =====================
 const socketUserMap = new Map();
 
+// Socket.IO authentication middleware
+io.use((socket, next) => {
+  const sessionId = socket.handshake.headers.cookie?.match(/connect\.sid=([^;]+)/)?.[1];
+  if (!sessionId) {
+    return next(new Error('No session cookie'));
+  }
+  next();
+});
+
 io.on('connection', (socket) => {
-  console.log('ðŸ”Œ Client connected:', socket.id);
   
   socket.on('auth', (userId) => {
-    if (userId) {
+    // Validate that the userId matches the session
+    if (userId && typeof userId === 'string' && /^[0-9]+$/.test(userId)) {
       socketUserMap.set(socket.id, userId);
       const userSession = getUserSession(userId);
       userSession.socketIds.add(socket.id);
       
       sendUserSpecificData(socket, userId);
-      console.log(`âœ… Socket ${socket.id} authenticated for user ${userId}`);
+    } else {
+      console.warn(`Invalid auth attempt: ${userId}`);
+      socket.emit('auth_error', 'Invalid user ID');
     }
+  });
+  
+  // Handle test participant addition (Admin only)
+  socket.on('test-participant-add', (participantData) => {
+    const userId = socketUserMap.get(socket.id);
+    if (!userId) return;
+    
+    const userSession = getUserSession(userId);
+    
+    console.log(`Test-Teilnehmer anfrage von User ${userId}, Admin: ${userSession.isAdmin}`);
+    // Only allow if user has admin privileges
+    if (!userSession.isAdmin) {
+      console.warn(`Unauthorized test participant attempt by ${userId}`);
+      return;
+    }
+    
+    // Validate and sanitize input
+    if (!participantData || typeof participantData !== 'object') return;
+    
+    const login = String(participantData.login || '').replace(/[<>'"&]/g, '').substring(0, 25);
+    const displayName = String(participantData.displayName || login).replace(/[<>'"&]/g, '').substring(0, 50);
+    const luck = Math.max(0.1, Math.min(10, parseFloat(participantData.luck) || 1.0));
+    
+    if (!login) return;
+    
+    // Add participant to giveaway participants (GiveawayManager already has participants Map)
+    const participant = {
+      login: login,
+      userId: `test_${login}`,
+      displayName: displayName,
+      joinedAt: new Date().toISOString(),
+      luck: luck,
+      badges: [],
+      multiplierText: getMultiplierText(luck),
+      profileImageUrl: participantData.profileImageUrl,
+      isTestParticipant: true
+    };
+    
+    // Add to both participants maps to ensure proper winner selection
+    userSession.giveaway.participants.set(login, participant);
+    userSession.giveaway.entries = userSession.giveaway.participants.size;
+    
+    // Broadcast via normal participant system so they behave like real participants
+    userSession.socketIds.forEach(socketId => {
+      const targetSocket = io.sockets.sockets.get(socketId);
+      if (targetSocket) {
+        targetSocket.emit('participant:add', participant);
+      }
+    });
+    
+    console.log(`Test-Teilnehmer hinzugefügt: ${participant.login} (Glück: ${participant.luck}x)`);
+    console.log(`Aktuelle Teilnehmer-Anzahl: ${userSession.giveaway.participants.size}`);
   });
   
   socket.on('disconnect', () => {
@@ -139,7 +371,6 @@ io.on('connection', (socket) => {
       }
       
       socketUserMap.delete(socket.id);
-      console.log(`ðŸ”Œ Socket ${socket.id} disconnected for user ${userId}`);
     }
   });
 });
@@ -174,7 +405,6 @@ function sendUserSpecificData(socket, userId) {
 // ===================== EMOTE LOADER FUNKTIONEN =====================
 async function loadGlobalEmotes(accessToken) {
   try {
-    console.log('ðŸ” Loading global Twitch emotes...');
     const response = await axios.get(`${TWITCH_API}/chat/emotes/global`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -187,13 +417,46 @@ async function loadGlobalEmotes(accessToken) {
       globalEmotes.set(emote.name, {
         id: emote.id,
         name: emote.name,
-        url: emote.images.url_1x,
-        url_2x: emote.images.url_2x,
-        url_4x: emote.images.url_4x
+        url: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/1.0`,
+        url_2x: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/2.0`,
+        url_4x: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/3.0`,
+        provider: 'twitch'
       });
     });
     
-    console.log(`âœ… Loaded ${globalEmotes.size} global Twitch emotes`);
+    // Add classic Twitch text emotes manually (these have fixed IDs)
+    const classicEmotes = [
+      { name: ':)', id: '1' },
+      { name: ':(', id: '2' },
+      { name: ':o', id: '8' },
+      { name: ':z', id: '5' },
+      { name: 'B)', id: '7' },
+      { name: ':\\\\', id: '10' },
+      { name: ';)', id: '11' },
+      { name: ':w', id: '12' },
+      { name: ':p', id: '12' },
+      { name: ':P', id: '12' },
+      { name: 'R)', id: '14' },
+      { name: 'o_O', id: '6' },
+      { name: ':D', id: '3' },
+      { name: '>(', id: '4' },
+      { name: '<3', id: '9' }
+    ];
+    
+    classicEmotes.forEach(emote => {
+      if (!globalEmotes.has(emote.name)) {
+        globalEmotes.set(emote.name, {
+          id: emote.id,
+          name: emote.name,
+          url: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/1.0`,
+          url_2x: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/2.0`,
+          url_4x: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/3.0`,
+          provider: 'twitch-classic'
+        });
+      }
+    });
+    
+    console.log(`${globalEmotes.size} globale Twitch Emotes geladen`);
   } catch (error) {
     console.error('âŒ Failed to load global emotes:', error.message);
   }
@@ -201,7 +464,6 @@ async function loadGlobalEmotes(accessToken) {
 
 async function loadChannelEmotes(channelId, accessToken, userId) {
   try {
-    console.log(`ðŸ“º Loading channel emotes for ${channelId}...`);
     const response = await axios.get(`${TWITCH_API}/chat/emotes`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -212,42 +474,93 @@ async function loadChannelEmotes(channelId, accessToken, userId) {
     
     const userSession = getUserSession(userId);
     userSession.channelEmotes.clear();
+    
+    let emoteTypes = {};
     response.data.data.forEach(emote => {
+      
+      // Count emote types for logging
+      const type = emote.emote_type || 'unknown';
+      emoteTypes[type] = (emoteTypes[type] || 0) + 1;
+      
       userSession.channelEmotes.set(emote.name, {
         id: emote.id,
         name: emote.name,
-        url: emote.images.url_1x,
-        url_2x: emote.images.url_2x,
-        url_4x: emote.images.url_4x
+        url: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/1.0`,
+        url_2x: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/2.0`,
+        url_4x: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/3.0`,
+        provider: 'twitch-channel',
+        emoteType: emote.emote_type || 'unknown',
+        tier: emote.tier || null
       });
     });
     
-    console.log(`âœ… Loaded ${userSession.channelEmotes.size} channel emotes for ${channelId}`);
   } catch (error) {
     console.error('âŒ Failed to load channel emotes:', error.message);
   }
 }
 
+async function loadUserEmotes(accessToken, userId) {
+  try {
+    
+    // Load user's emote sets (includes subscriber emotes)
+    const response = await axios.get(`${TWITCH_API}/chat/emotes/user`, {
+      headers: {
+        'Client-Id': process.env.TWITCH_CLIENT_ID,
+        'Authorization': `Bearer ${accessToken}`
+      },
+      params: { user_id: userId }
+    });
+    
+    const userSession = getUserSession(userId);
+    let userEmoteCount = 0;
+    
+    response.data.data.forEach(emote => {
+      // Add to user's channel emotes if not already there
+      if (!userSession.channelEmotes.has(emote.name)) {
+        userSession.channelEmotes.set(emote.name, {
+          id: emote.id,
+          name: emote.name,
+          url: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/1.0`,
+          url_2x: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/2.0`,
+          url_4x: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/3.0`,
+          provider: 'twitch-user'
+        });
+        userEmoteCount++;
+      }
+    });
+    
+  } catch (error) {
+    console.error('âŒ Failed to load user emotes:', error.message);
+  }
+}
+
 async function loadBTTVEmotes(channelId = null) {
   try {
-    console.log('ðŸŽ­ Loading BTTV emotes...');
     
-    const globalResponse = await axios.get('https://api.betterttv.net/3/cached/emotes/global');
-    bttvEmotes.clear();
-    globalResponse.data.forEach(emote => {
-      bttvEmotes.set(emote.code, {
-        id: emote.id,
-        name: emote.code,
-        url: `https://cdn.betterttv.net/emote/${emote.id}/1x`,
-        url_2x: `https://cdn.betterttv.net/emote/${emote.id}/2x`,
-        url_4x: `https://cdn.betterttv.net/emote/${emote.id}/3x`,
-        provider: 'bttv'
+    // Only load global emotes if cache is expired
+    if (emoteCache.shouldRefresh('bttv')) {
+      const globalResponse = await axios.get('https://api.betterttv.net/3/cached/emotes/global', {
+        timeout: 10000
       });
-    });
+      bttvEmotes.clear();
+      globalResponse.data.forEach(emote => {
+        bttvEmotes.set(emote.code, {
+          id: emote.id,
+          name: emote.code,
+          url: `https://cdn.betterttv.net/emote/${emote.id}/1x`,
+          url_2x: `https://cdn.betterttv.net/emote/${emote.id}/2x`,
+          url_4x: `https://cdn.betterttv.net/emote/${emote.id}/3x`,
+          provider: 'bttv'
+        });
+      });
+      emoteCache.markUpdated('bttv');
+    }
     
     if (channelId) {
       try {
-        const channelResponse = await axios.get(`https://api.betterttv.net/3/cached/users/twitch/${channelId}`);
+        const channelResponse = await axios.get(`https://api.betterttv.net/3/cached/users/twitch/${channelId}`, {
+          timeout: 10000
+        });
         channelResponse.data.channelEmotes?.forEach(emote => {
           bttvEmotes.set(emote.code, {
             id: emote.id,
@@ -270,11 +583,9 @@ async function loadBTTVEmotes(channelId = null) {
           });
         });
       } catch (e) {
-        console.log('No BTTV channel emotes found for', channelId);
       }
     }
     
-    console.log(`âœ… Loaded ${bttvEmotes.size} BTTV emotes`);
   } catch (error) {
     console.error('âŒ Failed to load BTTV emotes:', error.message);
   }
@@ -282,9 +593,10 @@ async function loadBTTVEmotes(channelId = null) {
 
 async function loadFFZEmotes(channelId = null) {
   try {
-    console.log('ðŸ¸ Loading FrankerFaceZ emotes...');
     
-    const globalResponse = await axios.get('https://api.frankerfacez.com/v1/set/global');
+    const globalResponse = await axios.get('https://api.frankerfacez.com/v1/set/global', {
+      timeout: 10000
+    });
     ffzEmotes.clear();
     Object.values(globalResponse.data.sets).forEach(set => {
       set.emoticons?.forEach(emote => {
@@ -302,7 +614,9 @@ async function loadFFZEmotes(channelId = null) {
     
     if (channelId) {
       try {
-        const channelResponse = await axios.get(`https://api.frankerfacez.com/v1/room/id/${channelId}`);
+        const channelResponse = await axios.get(`https://api.frankerfacez.com/v1/room/id/${channelId}`, {
+          timeout: 10000
+        });
         Object.values(channelResponse.data.sets).forEach(set => {
           set.emoticons?.forEach(emote => {
             const urls = emote.urls;
@@ -317,20 +631,100 @@ async function loadFFZEmotes(channelId = null) {
           });
         });
       } catch (e) {
-        console.log('No FFZ channel emotes found for', channelId);
       }
     }
     
-    console.log(`âœ… Loaded ${ffzEmotes.size} FFZ emotes`);
   } catch (error) {
     console.error('âŒ Failed to load FFZ emotes:', error.message);
+  }
+}
+
+async function load7TVEmotes(channelId = null) {
+  try {
+    
+    // Load global 7TV emotes
+    const globalResponse = await axios.get('https://7tv.io/v3/emote-sets/global', {
+      timeout: 10000
+    });
+    seventvEmotes.clear();
+    globalResponse.data.emotes?.forEach(emote => {
+      seventvEmotes.set(emote.name, {
+        id: emote.id,
+        name: emote.name,
+        url: `https://cdn.7tv.app/emote/${emote.id}/1x.webp`,
+        url_2x: `https://cdn.7tv.app/emote/${emote.id}/2x.webp`,
+        url_4x: `https://cdn.7tv.app/emote/${emote.id}/4x.webp`,
+        provider: '7tv'
+      });
+    });
+    
+    if (channelId) {
+      try {
+        // Get 7TV user ID for the Twitch channel
+        const userResponse = await axios.get(`https://7tv.io/v3/users/twitch/${channelId}`, {
+          timeout: 10000
+        });
+        const seventvUserId = userResponse.data.id;
+        
+        // Get channel emote set
+        const channelResponse = await axios.get(`https://7tv.io/v3/users/${seventvUserId}`, {
+          timeout: 10000
+        });
+        const emoteSet = channelResponse.data.emote_set;
+        
+        if (emoteSet && emoteSet.emotes) {
+          emoteSet.emotes.forEach(emote => {
+            seventvEmotes.set(emote.name, {
+              id: emote.id,
+              name: emote.name,
+              url: `https://cdn.7tv.app/emote/${emote.id}/1x.webp`,
+              url_2x: `https://cdn.7tv.app/emote/${emote.id}/2x.webp`,
+              url_4x: `https://cdn.7tv.app/emote/${emote.id}/4x.webp`,
+              provider: '7tv'
+            });
+          });
+        }
+      } catch (e) {
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ Failed to load 7TV emotes:', error.message);
+  }
+}
+
+// ===================== EMOTE REFRESH FUNCTION =====================
+async function refreshAllEmotes(channelId, accessToken, userId) {
+  
+  try {
+    // Load emotes in parallel for better performance
+    await Promise.allSettled([
+      loadGlobalEmotes(accessToken),
+      loadChannelEmotes(channelId, accessToken, userId),
+      loadUserEmotes(accessToken, userId), // Load user's subscriber emotes
+      loadBTTVEmotes(channelId),
+      loadFFZEmotes(channelId),
+      load7TVEmotes(channelId)
+    ]);
+    
+    
+    // Emit emote refresh event to client
+    emitToUser(userId, 'emotes:refreshed', {
+      global: globalEmotes.size,
+      channel: getUserSession(userId).channelEmotes.size,
+      bttv: bttvEmotes.size,
+      ffz: ffzEmotes.size,
+      seventv: seventvEmotes.size
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to refresh emotes:', error.message);
   }
 }
 
 // ===================== BADGE LOADER FUNKTIONEN =====================
 async function loadGlobalBadges(accessToken) {
   try {
-    console.log('ðŸ† Loading global badges...');
     const response = await axios.get(`${TWITCH_API}/chat/badges/global`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -355,17 +749,16 @@ async function loadGlobalBadges(accessToken) {
     });
     
     globalBadges = badgeData;
-    console.log('âœ… Global badges loaded:', Object.keys(globalBadges).length, 'sets');
+    console.log(`${Object.keys(globalBadges).length} globale Badges geladen`);
     return badgeData;
   } catch (error) {
-    console.error('âŒ Failed to load global badges:', error.message);
+    console.error('âŒ Fehler beim Laden der globalen Badges:', error.message);
     return {};
   }
 }
 
 async function loadChannelBadges(channelId, accessToken, userId) {
   try {
-    console.log(`ðŸ“º Loading channel badges for ${channelId}...`);
     const response = await axios.get(`${TWITCH_API}/chat/badges`, {
       headers: {
         'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -393,10 +786,9 @@ async function loadChannelBadges(channelId, accessToken, userId) {
     const userSession = getUserSession(userId);
     userSession.channelBadges = badgeData;
     
-    console.log(`âœ… Channel badges loaded for ${channelId}:`, Object.keys(badgeData).length, 'sets');
     return badgeData;
   } catch (error) {
-    console.error('âŒ Failed to load channel badges:', error.message);
+    console.error('âŒ Fehler beim Laden der Channel Badges:', error.message);
     return {};
   }
 }
@@ -412,10 +804,8 @@ async function loadUserProfileImage(userId, accessToken) {
     });
     if (response.data.data && response.data.data.length > 0) {
       const profileUrl = response.data.data[0].profile_image_url;
-      console.log(`âœ… Profile image loaded for ${userId}`);
       return profileUrl;
     }
-    console.log(`âš ï¸ No profile image found for user ${userId}`);
     return null;
   } catch (error) {
     console.error(`âŒ Failed to load profile image for user ${userId}:`, error.message);
@@ -430,7 +820,16 @@ function parseBadges(tags, userId = null) {
   let badgeString = tags.badges || tags['badges-raw'] || '';
   let badgeInfoString = tags['badge-info'] || tags['badge-info-raw'] || '';
   
+  // Debug logging
+  const username = tags.username || tags['display-name'] || 'unknown';
+  console.log(`🏷️ parseBadges for ${username}:`);
+  console.log(`  - input tags.badges: "${tags.badges}"`);
+  console.log(`  - input tags['badges-raw']: "${tags['badges-raw']}"`);
+  console.log(`  - input tags['badge-info']: "${tags['badge-info']}"`);
+  console.log(`  - input tags['badge-info-raw']: "${tags['badge-info-raw']}"`);
+  
   if (typeof tags.badges === 'object' && tags.badges !== null && !Array.isArray(tags.badges)) {
+    console.log(`  - converting object badges to string`);
     badgeString = Object.entries(tags.badges)
       .map(([key, value]) => `${key}/${value}`)
       .join(',');
@@ -444,7 +843,11 @@ function parseBadges(tags, userId = null) {
     badgeInfoString = String(badgeInfoString || '');
   }
   
+  console.log(`  - final badgeString: "${badgeString}"`);
+  console.log(`  - final badgeInfoString: "${badgeInfoString}"`);
+  
   if (!badgeString || badgeString.length === 0) {
+    console.log(`  - no badges to parse, returning empty array`);
     return badges;
   }
   
@@ -487,6 +890,8 @@ function parseBadges(tags, userId = null) {
   } catch (error) {
     console.error('âŒ Error parsing badges:', error.message);
   }
+  
+  console.log(`  - parsed ${badges.length} badges:`, badges.map(b => `${b.name}/${b.version}`));
   
   return badges;
 }
@@ -558,7 +963,7 @@ function getBadgeTitle(badgeName, badgeVersion, badgeInfoString = '') {
 }
 
 // ===================== EMOTE PARSER =====================
-function parseEmotesExtended(text, twitchEmotes = null, userId = null) {
+function parseEmotesExtended(text, twitchEmotes = null, userId = null, messageSenderId = null, accessToken = null) {
   if (!text) return text;
   
   let result = text;
@@ -577,6 +982,41 @@ function parseEmotesExtended(text, twitchEmotes = null, userId = null) {
   
   result = parseWordEmotes(result, bttvEmotes, 'bttv');
   result = parseWordEmotes(result, ffzEmotes, 'ffz');
+  result = parseWordEmotes(result, seventvEmotes, '7tv');
+  
+  return result;
+}
+
+async function parseEmotesExtendedAsync(text, twitchEmotes = null, userId = null, messageSenderId = null, accessToken = null) {
+  if (!text) return text;
+  
+  let result = text;
+  
+  if (twitchEmotes) {
+    result = parseNativeTwitchEmotes(result, twitchEmotes);
+  }
+  
+  result = parseTextEmotes(result);
+  result = parseWordEmotes(result, globalEmotes, 'twitch');
+  
+  if (userId) {
+    const userSession = getUserSession(userId);
+    result = parseWordEmotes(result, userSession.channelEmotes, 'twitch');
+  }
+  
+  // Load individual user emotes for better emote recognition
+  if (messageSenderId && accessToken && messageSenderId !== userId) {
+    try {
+      const userEmotes = await UserEmoteManager.getUserEmotes(messageSenderId, accessToken, userId);
+      result = parseWordEmotes(result, userEmotes, 'twitch-sender');
+    } catch (error) {
+      console.error(`Failed to load sender emotes for ${messageSenderId}:`, error.message);
+    }
+  }
+  
+  result = parseWordEmotes(result, bttvEmotes, 'bttv');
+  result = parseWordEmotes(result, ffzEmotes, 'ffz');
+  result = parseWordEmotes(result, seventvEmotes, '7tv');
   
   return result;
 }
@@ -639,25 +1079,80 @@ function parseNativeTwitchEmotes(text, emotes) {
 }
 
 function parseTextEmotes(text) {
+  // This function is now disabled as Twitch classic emotes are handled by global emotes
+  // Only handle text emotes that are NOT covered by Twitch
   let result = text;
   
-  for (const [textEmote, emoji] of Object.entries(textEmotes)) {
-    const regex = new RegExp(`\\b${escapeRegExp(textEmote)}\\b`, 'gi');
-    result = result.replace(regex, `<span class="text-emote" title="${textEmote}">${emoji}</span>`);
+  const nonTwitchEmotes = [
+    { pattern: ':-\\)', name: ':-)', title: 'Happy', color: '#FFA500' },
+    { pattern: ':\\|', name: ':|', title: 'Neutral', color: '#808080' },
+    { pattern: ':/', name: ':/', title: 'Confused', color: '#FFB347' },
+    { pattern: ':O', name: ':O', title: 'Surprised', color: '#87CEEB' },
+    { pattern: ';P', name: ';P', title: 'Wink Tongue', color: '#FF69B4' },
+    { pattern: ':3', name: ':3', title: 'Cat Happy', color: '#9370DB' },
+    { pattern: '</3', name: '</3', title: 'Broken Heart', color: '#DC143C' },
+    { pattern: 'xD', name: 'xD', title: 'Laughing', color: '#32CD32' },
+    { pattern: 'XD', name: 'XD', title: 'Laughing', color: '#32CD32' },
+    { pattern: ':\\*', name: ':*', title: 'Kiss', color: '#FF1493' },
+    { pattern: '8\\)', name: '8)', title: 'Cool', color: '#4169E1' },
+    { pattern: 'O_o', name: 'O_o', title: 'Confused', color: '#DAA520' },
+    { pattern: '-_-', name: '-_-', title: 'Annoyed', color: '#696969' }
+  ];
+  
+  console.log(`🔍 Parsing supplementary text emotes in: "${text}"`);
+  
+  let foundEmotes = [];
+  for (const emote of nonTwitchEmotes) {
+    const regex = new RegExp(`(^|\\s|\\b)(${emote.pattern})(\\s|\\b|$)`, 'gi');
+    if (regex.test(text)) {
+      foundEmotes.push(emote.name);
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="12" fill="${emote.color}" stroke="#fff" stroke-width="2"/><text x="50%" y="50%" font-size="8" text-anchor="middle" dominant-baseline="middle" fill="white">${emote.name}</text></svg>`;
+      const replacement = `$1<img src="data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}" alt="${emote.name}" class="chat-emote text-emote" title="${emote.title} (${emote.name})" loading="lazy">$3`;
+      result = result.replace(new RegExp(`(^|\\s|\\b)(${emote.pattern})(\\s|\\b|$)`, 'gi'), replacement);
+    }
+  }
+  
+  if (foundEmotes.length > 0) {
+    console.log(`😊 Found supplementary text emotes:`, foundEmotes);
   }
   
   return result;
 }
 
 function parseWordEmotes(text, emoteMap, provider) {
-  if (!text || emoteMap.size === 0) return text;
+  if (!text || emoteMap.size === 0) {
+    console.log(`⚠️ Skipping ${provider}: text="${text}", emotes=${emoteMap.size}`);
+    return text;
+  }
   
   let result = text;
+  let foundEmotes = [];
+  
+  console.log(`🔍 Parsing ${provider} emotes in: "${text}"`);
+  console.log(`📝 Available ${provider} emotes:`, Array.from(emoteMap.keys()).slice(0, 10)); // Show first 10
   
   for (const [emoteName, emoteData] of emoteMap.entries()) {
-    const regex = new RegExp(`\\b${escapeRegExp(emoteName)}\\b`, 'g');
-    const replacement = `<img src="${emoteData.url}" alt="${emoteName}" class="chat-emote emote-${provider}" title="${emoteName} (${provider.toUpperCase()})">`;
-    result = result.replace(regex, replacement);
+    // Try both word boundary and simple matching
+    const patterns = [
+      new RegExp(`\\b${escapeRegExp(emoteName)}\\b`, 'g'), // Word boundary
+      new RegExp(`(?:^|\\s)${escapeRegExp(emoteName)}(?=\\s|$)`, 'g'), // Space boundary
+      new RegExp(escapeRegExp(emoteName), 'g') // Exact match (fallback)
+    ];
+    
+    for (const regex of patterns) {
+      if (regex.test(text)) {
+        foundEmotes.push(`${emoteName} (${provider})`);
+        const replacement = `<img src="${escapeHtml(emoteData.url)}" alt="${escapeHtml(emoteName)}" class="chat-emote emote-${escapeHtml(provider)}" title="${escapeHtml(emoteName)} (${escapeHtml(provider.toUpperCase())})" loading="lazy" onerror="console.log('Failed to load emote: ${escapeHtml(emoteName)}')">`;
+        result = result.replace(new RegExp(`\\b${escapeRegExp(emoteName)}\\b`, 'g'), replacement);
+        console.log(`✅ Replaced ${emoteName} with image in ${provider}`);
+        break; // Don't try other patterns for this emote
+      }
+    }
+  }
+  
+  if (foundEmotes.length > 0) {
+    console.log(`🎭 Found ${provider} emotes:`, foundEmotes);
+  } else {
   }
   
   return result;
@@ -749,6 +1244,88 @@ function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// HTML escape function to prevent XSS
+function escapeHtml(unsafe) {
+  if (typeof unsafe !== 'string') {
+    unsafe = String(unsafe || '');
+  }
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Function to sanitize sensitive data from logs
+function sanitizeForLogging(obj) {
+  if (typeof obj !== 'object' || obj === null) return obj;
+  
+  const sensitive = ['access_token', 'refresh_token', 'client_secret', 'password', 'secret'];
+  const sanitized = { ...obj };
+  
+  for (const key in sanitized) {
+    if (sensitive.some(s => key.toLowerCase().includes(s))) {
+      sanitized[key] = '[REDACTED]';
+    } else if (typeof sanitized[key] === 'object') {
+      sanitized[key] = sanitizeForLogging(sanitized[key]);
+    }
+  }
+  
+  return sanitized;
+}
+
+// Input validation and sanitization functions
+function validateKeyword(keyword) {
+  if (!keyword || typeof keyword !== 'string') return '';
+  
+  // Remove dangerous characters and limit length
+  const sanitized = String(keyword)
+    .replace(/[<>'"&]/g, '') // Remove dangerous HTML chars
+    .replace(/\s+/g, ' ')    // Normalize whitespace
+    .trim()
+    .substring(0, 50);       // Limit length
+    
+  return sanitized.toLowerCase();
+}
+
+function validateDuration(duration) {
+  const parsed = parseInt(duration, 10);
+  if (isNaN(parsed) || parsed < 0) return 0;
+  return Math.min(parsed, 300); // Max 5 minutes
+}
+
+function requireAuth(req, res, next) {
+  if (!req.session?.user) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  next();
+}
+
+// Rate limiting for API endpoints
+const apiRateLimit = new Map();
+const API_RATE_LIMIT_WINDOW = 60000; // 1 minute
+const API_RATE_LIMIT_MAX = 30; // Max 30 requests per minute per user
+
+function rateLimit(req, res, next) {
+  const userId = req.session?.user?.id;
+  if (!userId) return next();
+  
+  const now = Date.now();
+  const userRequests = apiRateLimit.get(userId) || [];
+  
+  // Remove old requests
+  const recentRequests = userRequests.filter(time => (now - time) < API_RATE_LIMIT_WINDOW);
+  
+  if (recentRequests.length >= API_RATE_LIMIT_MAX) {
+    return res.status(429).json({ error: 'Too many requests' });
+  }
+  
+  recentRequests.push(now);
+  apiRateLimit.set(userId, recentRequests);
+  next();
+}
+
 // ===================== USER INFO API =====================
 async function getUserInfo(userId, login, accessToken) {
   try {
@@ -796,7 +1373,7 @@ class GiveawayManager {
     this.startTime = null;
   }
 
-  start({ channel, channelId, hostLogin, duration = 0, subsOnly = false, autoJoinHost = true }) {
+  async start({ channel, channelId, hostLogin, duration = 0, subsOnly = false, autoJoinHost = true, accessToken = null }) {
     this.state = 'collect';
     this.channel = channel;
     this.channelId = channelId;
@@ -810,12 +1387,24 @@ class GiveawayManager {
     this.spamBlockedUsers.clear();
 
     if (autoJoinHost && hostLogin) {
-      this.addHost();
+      await this.addHost(accessToken);
     }
   }
 
-  addHost() {
+  async addHost(accessToken = null) {
     if (!this.hostLogin) return;
+    
+    let profileImageUrl = null;
+    
+    // Load profile image for host if access token is available
+    if (this.channelId && accessToken) {
+      try {
+        profileImageUrl = await loadUserProfileImage(this.channelId, accessToken);
+        console.log(`✅ Host profile image loaded: ${profileImageUrl ? 'success' : 'no image found'}`);
+      } catch (e) {
+        console.error('❌ Failed to load host profile image:', e);
+      }
+    }
     
     const hostParticipant = {
       login: this.hostLogin,
@@ -830,7 +1419,7 @@ class GiveawayManager {
         title: 'Broadcaster' 
       }],
       multiplierText: '1.00x',
-      profileImageUrl: null,
+      profileImageUrl: profileImageUrl,
       isHost: true
     };
     this.participants.set(this.hostLogin, hostParticipant);
@@ -1004,7 +1593,11 @@ class GiveawayManager {
 
   draw() {
     const arr = Array.from(this.participants.values());
-    if (arr.length === 0) return null;
+    console.log(`Draw-Methode aufgerufen: ${arr.length} Teilnehmer gefunden`);
+    if (arr.length === 0) {
+      console.log('Keine Teilnehmer in this.participants Map!');
+      return null;
+    }
     const weighted = [];
     arr.forEach(p => {
       const weight = Math.floor((p.luck || 1) * 10);
@@ -1028,15 +1621,13 @@ async function ensureTmiClient(sessionData, userId) {
   }
 
   await loadGlobalBadges(sessionData.twitch.access_token);
-  await loadGlobalEmotes(sessionData.twitch.access_token);
-  await loadBTTVEmotes();
-  await loadFFZEmotes();
   
   if (sessionData.user.id) {
     await loadChannelBadges(sessionData.user.id, sessionData.twitch.access_token, userId);
-    await loadChannelEmotes(sessionData.user.id, sessionData.twitch.access_token, userId);
-    await loadBTTVEmotes(sessionData.user.id);
-    await loadFFZEmotes(sessionData.user.id);
+    await refreshAllEmotes(sessionData.user.id, sessionData.twitch.access_token, userId);
+  } else {
+    // Load global emotes only if no channel ID
+    await refreshAllEmotes(null, sessionData.twitch.access_token, userId);
   }
 
   userSession.tmiClient = new tmi.Client({
@@ -1071,7 +1662,61 @@ async function ensureTmiClient(sessionData, userId) {
       }
     }
 
+    // Cache user badges for website messages
     const participantUserId = tags['user-id'];
+    if (participantUserId) {
+      const userBadgeCache = global.userBadgeCache = global.userBadgeCache || new Map();
+      
+      // Get raw badge data - try multiple formats
+      let rawBadges = '';
+      let rawBadgeInfo = '';
+      
+      // Try different badge format possibilities
+      if (tags.badges) {
+        if (typeof tags.badges === 'object' && !Array.isArray(tags.badges)) {
+          // Convert object to string format
+          rawBadges = Object.entries(tags.badges)
+            .map(([key, value]) => `${key}/${value}`)
+            .join(',');
+        } else {
+          rawBadges = String(tags.badges);
+        }
+      } else if (tags['badges-raw']) {
+        rawBadges = String(tags['badges-raw']);
+      }
+      
+      if (tags['badge-info']) {
+        if (typeof tags['badge-info'] === 'object' && !Array.isArray(tags['badge-info'])) {
+          rawBadgeInfo = Object.entries(tags['badge-info'])
+            .map(([key, value]) => `${key}/${value}`)
+            .join(',');
+        } else {
+          rawBadgeInfo = String(tags['badge-info']);
+        }
+      } else if (tags['badge-info-raw']) {
+        rawBadgeInfo = String(tags['badge-info-raw']);
+      }
+      
+      // Debug logging
+      console.log(`🔍 Badge debug for ${tags.username}:`);
+      console.log(`  - typeof tags.badges:`, typeof tags.badges);
+      console.log(`  - tags.badges:`, tags.badges);
+      console.log(`  - tags['badges-raw']:`, tags['badges-raw']);
+      console.log(`  - typeof tags['badge-info']:`, typeof tags['badge-info']);
+      console.log(`  - tags['badge-info']:`, tags['badge-info']);
+      console.log(`  - tags['badge-info-raw']:`, tags['badge-info-raw']);
+      console.log(`  - processed badges: "${rawBadges}"`);
+      console.log(`  - processed badge-info: "${rawBadgeInfo}"`);
+      
+      userBadgeCache.set(participantUserId, {
+        badges: rawBadges,
+        badgeInfo: rawBadgeInfo,
+        username: tags.username,
+        timestamp: Date.now()
+      });
+      console.log(`💾 Cached badges for ${tags.username} (${participantUserId}): "${rawBadges}"`);
+    }
+
     let profileImageUrl = null;
     
     if (participantUserId && sessionData?.twitch?.access_token) {
@@ -1082,7 +1727,18 @@ async function ensureTmiClient(sessionData, userId) {
       }
     }
 
-    const parsedMessage = parseEmotesExtended(message, tags.emotes, userId);
+    console.log(`💬 Processing message from ${tags['display-name'] || tags['username']}: "${message}"`);
+    console.log(`🎭 Available emotes - Global: ${globalEmotes.size}, Channel: ${userSession.channelEmotes.size}, BTTV: ${bttvEmotes.size}, FFZ: ${ffzEmotes.size}, 7TV: ${seventvEmotes.size}`);
+    
+    // Use async emote parsing to include sender's individual emotes
+    const parsedMessage = await parseEmotesExtendedAsync(
+      message, 
+      tags.emotes, 
+      userId, 
+      participantUserId,
+      sessionData.twitch.access_token
+    );
+    
     const result = userSession.giveaway.tryAdd(tags, message, userId);
 
     if (result && result.type === 'spam_blocked') {
@@ -1124,21 +1780,27 @@ async function ensureTmiClient(sessionData, userId) {
   });
 
   await userSession.tmiClient.connect();
-  console.log(`âœ… TMI client connected for user ${userId}`);
   return userSession.tmiClient;
 }
 
 // ===================== AUTH ROUTES =====================
 app.get('/auth/twitch', (req, res) => {
-  const state = crypto.randomBytes(16).toString('hex');
-  req.session.oauthState = state;
-  res.redirect(`${TWITCH_AUTH}?client_id=${process.env.TWITCH_CLIENT_ID}&redirect_uri=${process.env.TWITCH_REDIRECT_URI}&response_type=code&scope=${BASE_SCOPES.join(' ')}&state=${state}`);
+  // Einfacher OAuth-Flow ohne komplexe State-Validierung
+  const state = crypto.randomBytes(8).toString('hex'); // Kürzerer State
+  const authUrl = `${TWITCH_AUTH}?client_id=${process.env.TWITCH_CLIENT_ID}&redirect_uri=${process.env.TWITCH_REDIRECT_URI}&response_type=code&scope=${BASE_SCOPES.join(' ')}&state=${state}`;
+  res.redirect(authUrl);
 });
 
 app.get('/auth/twitch/callback', async (req, res) => {
-  const { code, state } = req.query;
-  if (!code || state !== req.session.oauthState) return res.status(400).send('OAuth error (state).');
   try {
+    const { code, state } = req.query;
+    
+    // Nur grundlegende Validierung
+    if (!code) {
+      return res.status(400).send('OAuth error: No authorization code received.');
+    }
+    
+    // Exchange code for tokens - Einfacher Ansatz
     const body = new URLSearchParams({
       client_id: process.env.TWITCH_CLIENT_ID,
       client_secret: process.env.TWITCH_CLIENT_SECRET,
@@ -1146,18 +1808,50 @@ app.get('/auth/twitch/callback', async (req, res) => {
       grant_type: 'authorization_code',
       redirect_uri: process.env.TWITCH_REDIRECT_URI
     });
-    const { data: tokens } = await axios.post(TWITCH_TOKEN, body.toString(), { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+    
+    const { data: tokens } = await axios.post(TWITCH_TOKEN, body.toString(), { 
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' } 
+    });
+    
     req.session.twitch = { access_token: tokens.access_token, refresh_token: tokens.refresh_token };
 
-    const { data: u } = await axios.get(`${TWITCH_API}/users`, { headers: { 'Client-Id': process.env.TWITCH_CLIENT_ID, Authorization: `Bearer ${tokens.access_token}` } });
+    // Get user information
+    const { data: u } = await axios.get(`${TWITCH_API}/users`, { 
+      headers: { 
+        'Client-Id': process.env.TWITCH_CLIENT_ID, 
+        Authorization: `Bearer ${tokens.access_token}` 
+      } 
+    });
+    
     const me = u.data[0];
-    req.session.user = { id: me.id, login: me.login, display_name: me.display_name, profile_image_url: me.profile_image_url, color: '#a970ff' };
+    req.session.user = { 
+      id: me.id, 
+      login: me.login, 
+      display_name: me.display_name, 
+      profile_image_url: me.profile_image_url, 
+      color: '#a970ff' 
+    };
 
     res.redirect(process.env.DEFAULT_REDIRECT_AFTER_LOGIN || '/dashboard');
   } catch (e) {
-    console.error(e.response?.data || e.message);
-    res.status(500).send('OAuth error.');
+    console.error('OAuth error:', e.response?.data || e.message);
+    res.status(500).send('OAuth failed. Please try again.');
   }
+});
+
+// Debug route for development (remove in production)
+app.get('/debug/session', (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).send('Not found');
+  }
+  
+  res.json({
+    hasSession: !!req.session,
+    sessionId: req.sessionID,
+    oauthState: req.session?.oauthState ? 'present' : 'missing',
+    user: req.session?.user ? 'present' : 'missing',
+    twitch: req.session?.twitch ? 'present' : 'missing'
+  });
 });
 
 app.get('/logout', (req, res) => {
@@ -1204,25 +1898,33 @@ app.get('/api/user-info/:userId', async (req, res) => {
 });
 
 // ===================== GIVEAWAY API - BENUTZERSPEZIFISCH =====================
-app.post('/api/giveaway/start', async (req, res) => {
+app.post('/api/giveaway/start', requireAuth, rateLimit, async (req, res) => {
   try {
-    if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
-
     const userId = req.session.user.id;
     const userSession = getUserSession(userId);
     
     const ch = req.session.user.login.toLowerCase();
     const channelId = req.session.user.id;
-    const keyword = req.body?.keyword || userSession.giveaway.keyword;
-    const duration = parseInt(req.body?.duration || 0);
+    
+    // Validate and sanitize inputs
+    const keyword = validateKeyword(req.body?.keyword || userSession.giveaway.keyword);
+    const duration = validateDuration(req.body?.duration);
     const subsOnly = Boolean(req.body?.subsOnly);
     const autoJoinHost = Boolean(req.body?.autoJoinHost);
 
     if (keyword) {
-      userSession.giveaway.keyword = String(keyword).toLowerCase();
+      userSession.giveaway.keyword = keyword;
     }
 
-    userSession.giveaway.start({ channel: ch, channelId, hostLogin: ch, duration, subsOnly, autoJoinHost });
+    await userSession.giveaway.start({ 
+      channel: ch, 
+      channelId, 
+      hostLogin: ch, 
+      duration, 
+      subsOnly, 
+      autoJoinHost, 
+      accessToken: req.session?.twitch?.access_token 
+    });
 
     const client = await ensureTmiClient(req.session, userId);
     if (!client.getChannels().includes('#' + ch)) await client.join(ch);
@@ -1250,8 +1952,7 @@ app.post('/api/giveaway/start', async (req, res) => {
   }
 });
 
-app.post('/api/giveaway/pause', (req, res) => {
-  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+app.post('/api/giveaway/pause', requireAuth, rateLimit, (req, res) => {
   
   const userId = req.session.user.id;
   const userSession = getUserSession(userId);
@@ -1263,8 +1964,7 @@ app.post('/api/giveaway/pause', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/giveaway/resume', (req, res) => {
-  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+app.post('/api/giveaway/resume', requireAuth, rateLimit, (req, res) => {
   
   const userId = req.session.user.id;
   const userSession = getUserSession(userId);
@@ -1276,15 +1976,17 @@ app.post('/api/giveaway/resume', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/giveaway/end', (req, res) => {
-  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+app.post('/api/giveaway/end', requireAuth, rateLimit, (req, res) => {
   
   const userId = req.session.user.id;
   const userSession = getUserSession(userId);
   
+  console.log(`Pick Winner: Giveaway state = ${userSession.giveaway.state}`);
   if (userSession.giveaway.state === 'idle') return res.status(400).json({ error: 'not_running' });
   
   userSession.giveaway.lock();
+  console.log(`Vor draw(): Giveaway hat ${userSession.giveaway.participants.size} Teilnehmer`);
+  console.log('Teilnehmer Liste:', Array.from(userSession.giveaway.participants.keys()));
   const winner = userSession.giveaway.draw();
   
   if (!winner) {
@@ -1317,8 +2019,7 @@ app.get('/api/giveaway/status', (req, res) => {
   });
 });
 
-app.post('/api/giveaway/stop', (req, res) => {
-  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+app.post('/api/giveaway/stop', requireAuth, rateLimit, (req, res) => {
   
   const userId = req.session.user.id;
   const userSession = getUserSession(userId);
@@ -1360,8 +2061,7 @@ app.get('/api/giveaway/participants', (req, res) => {
 });
 
 // ===================== SETTINGS API - BENUTZERSPEZIFISCH =====================
-app.get('/api/settings/luck', (req, res) => {
-  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+app.get('/api/settings/luck', requireAuth, (req, res) => {
   
   const userId = req.session.user.id;
   const userSession = getUserSession(userId);
@@ -1369,8 +2069,7 @@ app.get('/api/settings/luck', (req, res) => {
   res.json(userSession.luckSettings);
 });
 
-app.put('/api/settings/luck', (req, res) => {
-  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+app.put('/api/settings/luck', requireAuth, rateLimit, (req, res) => {
   
   const userId = req.session.user.id;
   const userSession = getUserSession(userId);
@@ -1397,8 +2096,7 @@ app.put('/api/settings/luck', (req, res) => {
   res.json({ ok: true, luckSettings: userSession.luckSettings });
 });
 
-app.get('/api/settings/general', (req, res) => {
-  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+app.get('/api/settings/general', requireAuth, (req, res) => {
   
   const userId = req.session.user.id;
   const userSession = getUserSession(userId);
@@ -1406,8 +2104,7 @@ app.get('/api/settings/general', (req, res) => {
   res.json(userSession.generalSettings);
 });
 
-app.put('/api/settings/general', (req, res) => {
-  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+app.put('/api/settings/general', requireAuth, rateLimit, (req, res) => {
   
   const userId = req.session.user.id;
   const userSession = getUserSession(userId);
@@ -1432,22 +2129,371 @@ app.get('/api/settings/keyword', (req, res) => {
   });
 });
 
-app.put('/api/settings/keyword', (req, res) => {
-  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+app.put('/api/settings/keyword', requireAuth, rateLimit, (req, res) => {
   
   const userId = req.session.user.id;
   const userSession = getUserSession(userId);
-  const kw = (req.body?.keyword || '').toString().trim();
+  const kw = validateKeyword(req.body?.keyword || '');
   
   if (!kw || !kw.startsWith('!')) return res.status(400).json({ error: 'invalid_keyword' });
   
-  userSession.giveaway.keyword = kw.toLowerCase();
+  userSession.giveaway.keyword = kw;
   emitToUser(userId, 'giveaway:status', { 
     state: userSession.giveaway.state, 
     keyword: userSession.giveaway.keyword, 
     channel: userSession.giveaway.channel 
   });
   res.json({ ok: true, keyword: userSession.giveaway.keyword });
+});
+
+// ===================== EMOTE API ENDPOINTS =====================
+app.get('/api/emotes/all', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
+  
+  try {
+    const allEmotes = [];
+    
+    // Skip custom text emotes in autocomplete - focus on real Twitch emotes
+    // Custom text emotes are handled by parseTextEmotes() during chat parsing
+    
+    // Global Twitch emotes
+    globalEmotes.forEach((emote, name) => {
+      allEmotes.push({
+        name: emote.name,
+        provider: 'Twitch',
+        url: emote.url,
+        url_2x: emote.url_2x || emote.url,
+        global: true
+      });
+    });
+    
+    // Channel-specific Twitch emotes
+    if (userSession.channelEmotes) {
+      userSession.channelEmotes.forEach((emote, name) => {
+        allEmotes.push({
+          name: emote.name,
+          provider: 'Twitch',
+          url: emote.url,
+          url_2x: emote.url_2x || emote.url,
+          global: false
+        });
+      });
+    }
+    
+    // BTTV emotes
+    bttvEmotes.forEach((emote, name) => {
+      allEmotes.push({
+        name: emote.name,
+        provider: 'BTTV',
+        url: emote.url,
+        url_2x: emote.url_2x || emote.url,
+        global: true
+      });
+    });
+    
+    // FFZ emotes
+    ffzEmotes.forEach((emote, name) => {
+      allEmotes.push({
+        name: emote.name,
+        provider: 'FFZ',
+        url: emote.url,
+        url_2x: emote.url_2x || emote.url,
+        global: true
+      });
+    });
+    
+    // 7TV emotes
+    seventvEmotes.forEach((emote, name) => {
+      allEmotes.push({
+        name: emote.name,
+        provider: '7TV',
+        url: emote.url,
+        url_2x: emote.url_2x || emote.url,
+        global: true
+      });
+    });
+    
+    // Remove duplicates and sort by name
+    const uniqueEmotes = allEmotes.filter((emote, index, self) => 
+      index === self.findIndex(e => e.name === emote.name)
+    ).sort((a, b) => a.name.localeCompare(b.name));
+    
+    
+    res.json({
+      emotes: uniqueEmotes,
+      count: uniqueEmotes.length,
+      providers: {
+        twitch: uniqueEmotes.filter(e => e.provider === 'Twitch').length,
+        bttv: uniqueEmotes.filter(e => e.provider === 'BTTV').length,
+        ffz: uniqueEmotes.filter(e => e.provider === 'FFZ').length,
+        seventv: uniqueEmotes.filter(e => e.provider === '7TV').length
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to get emotes:', error);
+    res.status(500).json({ error: 'Failed to load emotes' });
+  }
+});
+
+app.get('/api/emotes/search', (req, res) => {
+  if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+  
+  const query = (req.query.q || '').toLowerCase().trim();
+  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+  
+  if (!query || query.length < 2) {
+    return res.status(400).json({ error: 'Query must be at least 2 characters' });
+  }
+  
+  const userId = req.session.user.id;
+  const userSession = getUserSession(userId);
+  
+  try {
+    const results = [];
+    
+    // Search function with relevance scoring
+    const searchEmotes = (emoteMap, provider) => {
+      emoteMap.forEach((emote, name) => {
+        const nameLower = name.toLowerCase();
+        let score = 0;
+        
+        if (nameLower === query) score = 100;
+        else if (nameLower.startsWith(query)) score = 90;
+        else if (nameLower.includes(query)) score = 70;
+        
+        if (score > 0) {
+          results.push({
+            name: emote.name,
+            provider: provider,
+            url: emote.url,
+            url_2x: emote.url_2x || emote.url,
+            score: score
+          });
+        }
+      });
+    };
+    
+    // Search all emote sources
+    searchEmotes(globalEmotes, 'Twitch');
+    searchEmotes(userSession.channelEmotes, 'Twitch');
+    searchEmotes(bttvEmotes, 'BTTV');
+    searchEmotes(ffzEmotes, 'FFZ');
+    searchEmotes(seventvEmotes, '7TV');
+    
+    // Sort by relevance and limit results
+    const sortedResults = results
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+      .slice(0, limit);
+    
+    res.json({
+      query: query,
+      results: sortedResults,
+      count: sortedResults.length
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to search emotes:', error);
+    res.status(500).json({ error: 'Failed to search emotes' });
+  }
+});
+
+// ===================== EMOTE REFRESH ENDPOINT =====================
+app.post('/api/emotes/refresh', async (req, res) => {
+  try {
+    if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+    
+    const userId = req.session.user.id;
+    const channelId = req.session.user.id;
+    const accessToken = req.session.twitch.access_token;
+    
+    if (!accessToken) {
+      return res.status(401).json({ error: 'No access token' });
+    }
+    
+    await refreshAllEmotes(channelId, accessToken, userId);
+    
+    res.json({ 
+      ok: true, 
+      message: 'Emotes refreshed successfully',
+      counts: {
+        global: globalEmotes.size,
+        channel: getUserSession(userId).channelEmotes.size,
+        bttv: bttvEmotes.size,
+        ffz: ffzEmotes.size,
+        seventv: seventvEmotes.size
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Emote refresh error:', error);
+    res.status(500).json({ error: 'Failed to refresh emotes' });
+  }
+});
+
+// ===================== USER-SPECIFIC EMOTE DEBUG ENDPOINT =====================
+app.get('/api/emotes/user/:userId', async (req, res) => {
+  try {
+    if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+    
+    const targetUserId = req.params.userId;
+    const requesterUserId = req.session.user.id;
+    const accessToken = req.session.twitch.access_token;
+    
+    if (!accessToken) {
+      return res.status(401).json({ error: 'No access token' });
+    }
+    
+    const userEmotes = await UserEmoteManager.getUserEmotes(targetUserId, accessToken, requesterUserId);
+    
+    const emoteArray = Array.from(userEmotes.entries()).map(([name, data]) => ({
+      name: data.name,
+      url: data.url,
+      url_2x: data.url_2x,
+      provider: data.provider
+    }));
+    
+    res.json({
+      userId: targetUserId,
+      emoteCount: emoteArray.length,
+      emotes: emoteArray,
+      cached: userEmoteCache.has(`${targetUserId}_${requesterUserId}`)
+    });
+    
+  } catch (error) {
+    console.error('❌ User emote debug error:', error);
+    res.status(500).json({ error: 'Failed to get user emotes' });
+  }
+});
+
+// ===================== CHANNEL EMOTE DEBUG ENDPOINT =====================
+app.get('/api/emotes/channel/:channelId', async (req, res) => {
+  try {
+    if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+    
+    const channelId = req.params.channelId;
+    const accessToken = req.session.twitch.access_token;
+    
+    if (!accessToken) {
+      return res.status(401).json({ error: 'No access token' });
+    }
+    
+    console.log(`🔍 Fetching channel emotes for broadcaster ${channelId}...`);
+    
+    const response = await axios.get(`${TWITCH_API}/chat/emotes`, {
+      headers: {
+        'Client-Id': process.env.TWITCH_CLIENT_ID,
+        'Authorization': `Bearer ${accessToken}`
+      },
+      params: { broadcaster_id: channelId }
+    });
+    
+    const emotes = response.data.data.map(emote => ({
+      name: emote.name,
+      id: emote.id,
+      url: `https://static-cdn.jtvnw.net/emoticons/v2/${emote.id}/default/dark/1.0`,
+      emoteType: emote.emote_type || 'unknown',
+      tier: emote.tier || null,
+      setId: emote.emote_set_id || null
+    }));
+    
+    // Group by emote type for better overview
+    const emotesByType = {};
+    emotes.forEach(emote => {
+      const type = emote.emoteType;
+      if (!emotesByType[type]) emotesByType[type] = [];
+      emotesByType[type].push(emote);
+    });
+    
+    res.json({
+      channelId: channelId,
+      totalEmotes: emotes.length,
+      emotesByType: emotesByType,
+      emotes: emotes
+    });
+    
+  } catch (error) {
+    console.error('❌ Channel emote debug error:', error);
+    res.status(500).json({ error: 'Failed to get channel emotes' });
+  }
+});
+
+// ===================== EMOTE PARSING TEST ENDPOINT =====================
+app.post('/api/emotes/test', async (req, res) => {
+  try {
+    if (!req.session?.user) return res.status(401).json({ error: 'Not logged in' });
+    
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: 'No text provided' });
+    
+    const userId = req.session.user.id;
+    const userSession = getUserSession(userId);
+    
+    console.log(`🧪 Testing emote parsing for: "${text}"`);
+    
+    const steps = [];
+    let result = text;
+    
+    // Step 1: Text emotes
+    steps.push({ step: 'Original', text: result });
+    result = parseTextEmotes(result);
+    steps.push({ 
+      step: 'Text emotes', 
+      text: result,
+      info: 'Converts :) :D <3 etc. to emote images'
+    });
+    
+    // Step 2: Global Twitch emotes
+    result = parseWordEmotes(result, globalEmotes, 'twitch-global');
+    steps.push({ step: 'Global Twitch', text: result });
+    
+    // Step 3: Channel emotes (includes broadcaster emotes)
+    result = parseWordEmotes(result, userSession.channelEmotes, 'twitch-channel');
+    steps.push({ 
+      step: 'Channel emotes', 
+      text: result, 
+      count: userSession.channelEmotes.size,
+      emotes: Array.from(userSession.channelEmotes.keys()).slice(0, 5) // Show first 5 for reference
+    });
+    
+    // Step 4: User-specific emotes
+    const userEmotes = await UserEmoteManager.getUserEmotes(userId, req.session.twitch.access_token, userId);
+    result = parseWordEmotes(result, userEmotes, 'twitch-user');
+    steps.push({ step: 'User emotes', text: result });
+    
+    // Step 5: BTTV
+    result = parseWordEmotes(result, bttvEmotes, 'bttv');
+    steps.push({ step: 'BTTV', text: result });
+    
+    // Step 6: FFZ
+    result = parseWordEmotes(result, ffzEmotes, 'ffz');
+    steps.push({ step: 'FFZ', text: result });
+    
+    // Step 7: 7TV
+    result = parseWordEmotes(result, seventvEmotes, '7tv');
+    steps.push({ step: '7TV', text: result });
+    
+    res.json({
+      originalText: text,
+      finalResult: result,
+      steps: steps,
+      emoteCounts: {
+        global: globalEmotes.size,
+        channel: userSession.channelEmotes.size,
+        user: userEmotes.size,
+        bttv: bttvEmotes.size,
+        ffz: ffzEmotes.size,
+        seventv: seventvEmotes.size
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Emote test error:', error);
+    res.status(500).json({ error: 'Failed to test emote parsing' });
+  }
 });
 
 // ===================== CHAT ENDPOINTS - BENUTZERSPEZIFISCH =====================
@@ -1467,15 +2513,58 @@ app.post('/api/chat/send', async (req, res) => {
     
     if (!client.getChannels().includes('#' + ch)) await client.join(ch);
 
+    // Load user badges for website messages
+    // The problem is that Twitch API doesn't provide equipped badges
+    // We need to store the last known badges from when the user chatted via TMI
+    let userBadges = '';
+    let userBadgeInfo = '';
+    
+    // Check if we have cached badge data from the user's last TMI message
+    const userBadgeCache = global.userBadgeCache = global.userBadgeCache || new Map();
+    const cachedBadges = userBadgeCache.get(currentUser.id);
+    
+    console.log(`🔍 Website message badge lookup for ${currentUser.login} (ID: ${currentUser.id}):`);
+    console.log(`  - Cache exists:`, !!cachedBadges);
+    console.log(`  - Cached data:`, cachedBadges);
+    
+    if (cachedBadges) {
+      console.log(`📋 Using cached badges for ${currentUser.login}:`);
+      console.log(`  - badges: "${cachedBadges.badges}"`);
+      console.log(`  - badge-info: "${cachedBadges.badgeInfo}"`);
+      
+      userBadges = cachedBadges.badges || '';
+      userBadgeInfo = cachedBadges.badgeInfo || '';
+      
+      // If user is also broadcaster but cached badges don't include it, add it
+      if (ch === currentUser.login.toLowerCase() && !userBadges.includes('broadcaster')) {
+        userBadges = userBadges ? `broadcaster/1,${userBadges}` : 'broadcaster/1';
+        console.log(`👑 Added broadcaster badge to cached badges: "${userBadges}"`);
+      }
+    } else {
+      // If no cached badges, at least set broadcaster badge if applicable
+      if (ch === currentUser.login.toLowerCase()) {
+        userBadges = 'broadcaster/1';
+        userBadgeInfo = '';
+        console.log(`👑 Setting broadcaster badge for ${currentUser.login}`);
+      }
+      
+      console.log(`⚠️ No cached badges found for ${currentUser.login}, using minimal badges: "${userBadges}"`);
+    }
+    
+    console.log(`🎭 Final badges for website message: "${userBadges}" | badge-info: "${userBadgeInfo}"`);
+
     const simulatedTags = {
       'username': currentUser.login,
       'display-name': currentUser.display_name || currentUser.login,
       'user-id': currentUser.id,
       'color': currentUser.color || '#a970ff',
-      'badges': ch === currentUser.login.toLowerCase() ? 'broadcaster/1' : '',
-      'badge-info': '',
+      'badges': userBadges,
+      'badge-info': userBadgeInfo,
       'emotes': null
     };
+    
+    console.log(`🏷️ Created simulatedTags:`, simulatedTags);
+    console.log(`🔧 About to parse badges with parseBadges(simulatedTags, userId)`);
     
     const messageKey = `${userId}_${currentUser.login}_${text}`;
     if (!global.recentWebsiteMessages) {
@@ -1496,7 +2585,17 @@ app.post('/api/chat/send', async (req, res) => {
     const badges = parseBadges(simulatedTags, userId);
     const luck = computeLuckFromTags(simulatedTags, userId);
 
-    const parsedMessage = parseEmotesExtended(text, null, userId);
+    console.log(`💬 Processing website message from ${currentUser.display_name || currentUser.login}: "${text}"`);
+    console.log(`🎭 Available emotes - Global: ${globalEmotes.size}, Channel: ${userSession.channelEmotes.size}, BTTV: ${bttvEmotes.size}, FFZ: ${ffzEmotes.size}, 7TV: ${seventvEmotes.size}`);
+    
+    // For website messages, use the current user's own emotes
+    const parsedMessage = await parseEmotesExtendedAsync(
+      text, 
+      null, 
+      userId,
+      userId, // sender is the same as the user
+      req.session.twitch.access_token
+    );
 
     const chatEvent = {
       channel: ch,
@@ -1567,12 +2666,42 @@ app.get('/dashboard', (req, res) => {
   if (!req.session?.user) {
     return res.redirect('/');
   }
+  
+  // Check and update admin status automatically
+  checkAdminStatus(req);
+  
   res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+});
+
+// ===================== ADMIN SYSTEM =====================
+// Check if user is admin based on Twitch User ID
+function checkAdminStatus(req) {
+  const userTwitchId = req.session?.user?.id;
+  const isAdmin = ADMIN_USER_IDS.includes(userTwitchId);
+  
+  // Set admin status in session
+  if (isAdmin && !req.session.isAdmin) {
+    req.session.isAdmin = true;
+    console.log(`Admin Berechtigung erteilt: ${req.session.user?.display_name} (${userTwitchId})`);
+  } else if (!isAdmin && req.session.isAdmin) {
+    req.session.isAdmin = false;
+  }
+  
+  return isAdmin;
+}
+
+// Admin status check route
+app.get('/admin/status', (req, res) => {
+  const isAdmin = checkAdminStatus(req);
+  res.json({ 
+    isAdmin: isAdmin,
+    userId: req.session?.user?.id || null,
+    username: req.session?.user?.display_name || null
+  });
 });
 
 // ===================== ENHANCED SOCKET.IO EVENTS =====================
 io.on('connection', (socket) => {
-  console.log('ðŸ”Œ Client connected:', socket.id);
   
   socket.on('connect', () => {
     socket.emit('status', 'ok');
@@ -1602,7 +2731,6 @@ io.on('connection', (socket) => {
       }
       
       socketUserMap.delete(socket.id);
-      console.log(`ðŸ”Œ Socket ${socket.id} disconnected for user ${userId}`);
     }
     socket.emit('status', 'err');
   });
@@ -1618,7 +2746,6 @@ io.on('connection', (socket) => {
       userSession.socketIds.add(socket.id);
       
       sendUserSpecificData(socket, userId);
-      console.log(`âœ… Socket ${socket.id} authenticated for user ${userId}`);
     }
   });
   
