@@ -47,7 +47,7 @@ app.use(session({
   resave: false,
   saveUninitialized: true, // Ermöglicht Session-Erstellung vor Login
   cookie: { 
-    secure: process.env.NODE_ENV === 'production', // Auto-detect based on environment
+    secure: false, // Temporär auf false für Debugging
     maxAge: 24 * 60 * 60 * 1000,
     httpOnly: true,
     sameSite: 'lax' // Weniger restriktiv für OAuth-Redirects
@@ -1832,7 +1832,19 @@ app.get('/auth/twitch/callback', async (req, res) => {
       color: '#a970ff' 
     };
 
-    res.redirect(process.env.DEFAULT_REDIRECT_AFTER_LOGIN || '/dashboard');
+    console.log('✅ Session saved:', !!req.session.user);
+    console.log('✅ User ID:', me.id);
+    console.log('✅ Redirecting to dashboard...');
+    
+    // Session speichern vor Redirect
+    req.session.save((err) => {
+      if (err) {
+        console.error('❌ Session save error:', err);
+        return res.status(500).send('Session error');
+      }
+      console.log('✅ Session successfully saved, redirecting...');
+      res.redirect('/dashboard');
+    });
   } catch (e) {
     console.error('OAuth error:', e.response?.data || e.message);
     res.status(500).send('OAuth failed. Please try again.');
@@ -2663,9 +2675,17 @@ app.get('/', (req, res) => {
 });
 
 app.get('/dashboard', (req, res) => {
+  console.log('🔍 Dashboard access attempt');
+  console.log('🔍 Session exists:', !!req.session);
+  console.log('🔍 User in session:', !!req.session?.user);
+  console.log('🔍 Session ID:', req.sessionID);
+  
   if (!req.session?.user) {
+    console.log('❌ No user in session, redirecting to login');
     return res.redirect('/');
   }
+  
+  console.log('✅ User authenticated:', req.session.user.display_name);
   
   // Check and update admin status automatically
   checkAdminStatus(req);
