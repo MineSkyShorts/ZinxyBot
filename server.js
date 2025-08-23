@@ -47,7 +47,7 @@ app.use(session({
   resave: false,
   saveUninitialized: true, // Ermöglicht Session-Erstellung vor Login
   cookie: { 
-    secure: false, // Für Development auf false setzen
+    secure: process.env.NODE_ENV === 'production', // Auto-detect based on environment
     maxAge: 24 * 60 * 60 * 1000,
     httpOnly: true,
     sameSite: 'lax' // Weniger restriktiv für OAuth-Redirects
