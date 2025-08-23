@@ -9,6 +9,67 @@ document.addEventListener('DOMContentLoaded', () => {
   void boot(); 
 });
 
+// ===================== ADMIN SYSTEM =====================
+const AdminSystem = {
+  isAdmin: false,
+
+  async init() {
+    console.group('🔐 Admin System');
+    console.log('Initialisiere Admin System...');
+    
+    // Check if current user has admin privileges (based on Twitch User ID)
+    await this.checkStatus();
+  },
+
+  async checkStatus() {
+    try {
+      const response = await fetch('/admin/status');
+      const data = await response.json();
+      
+      if (data.isAdmin) {
+        this.setAdminStatus(true, data.username, data.userId);
+      } else {
+        this.setAdminStatus(false, null, null);
+      }
+    } catch (error) {
+      console.error('Fehler beim Überprüfen des Admin Status:', error);
+      console.groupEnd();
+    }
+  },
+
+  setAdminStatus(isAdmin, username, userId) {
+    this.isAdmin = isAdmin;
+    
+    // Update UI
+    const body = document.body;
+    const adminCrown = document.getElementById('adminCrown');
+    
+    if (isAdmin) {
+      body.classList.add('admin-logged-in');
+      
+      // Update crown tooltip with username
+      if (adminCrown) {
+        adminCrown.title = `Admin User: ${username}`;
+      }
+      
+      console.log(`Admin Berechtigung aktiv für ${username} (ID: ${userId})`);
+      console.groupEnd();
+      
+      // Show admin toast notification
+      setTimeout(() => {
+        if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+          UIManager.showToast(`👑 Admin privileges activated for ${username}`, 'success');
+        }
+      }, 1500); // Delay to let UI load first
+      
+    } else {
+      body.classList.remove('admin-logged-in');
+      console.log('Keine Admin Berechtigung');
+      console.groupEnd();
+    }
+  }
+};
+
 async function boot() {
   // Enhanced State Management System
   const AppState = {
@@ -191,7 +252,8 @@ const Validators = {
       AppState.giveaway.timeRemaining = durationSeconds;
       AppState.giveaway.isTimedMode = true;
       
-      console.log(`⏰ Timer started for ${durationSeconds} seconds (${TimeUtils.secondsToFormat(durationSeconds)})`);
+      console.group('⏰ Timer');
+      console.log(`Timer gestartet für ${durationSeconds} Sekunden (${TimeUtils.secondsToFormat(durationSeconds)})`);
       
       AppState.ui.timerInterval = setInterval(() => {
         if (AppState.giveaway.status === 'PAUSED') {
@@ -220,11 +282,11 @@ const Validators = {
     },
     
     pause() {
-      console.log('⏸️ Timer paused at:', TimeUtils.secondsToFormat(AppState.giveaway.timeRemaining));
+      console.log('Timer pausiert bei:', TimeUtils.secondsToFormat(AppState.giveaway.timeRemaining));
     },
     
     resume() {
-      console.log('▶️ Timer resumed at:', TimeUtils.secondsToFormat(AppState.giveaway.timeRemaining));
+      console.log('Timer fortgesetzt bei:', TimeUtils.secondsToFormat(AppState.giveaway.timeRemaining));
     },
     
     updateDisplay() {
@@ -244,19 +306,20 @@ const Validators = {
     
     // ✅ KORRIGIERT: Verbesserte Timer-Ende Logik
     async onTimerEnd() {
-      console.log('⏰ Timer ended - Stopping timer and checking participants');
+      console.log('Timer beendet - Stoppe Timer und prüfe Teilnehmer');
       this.stop(); // Stoppe Timer sofort
       
       // Prüfe aktuellen Status
       if (AppState.giveaway.status !== 'ACTIVE') {
-        console.log('⚠️ Timer ended but giveaway not active, ignoring');
+        console.warn('Timer beendet aber Giveaway nicht aktiv');
         return;
       }
       
-      console.log(`📊 Timer ended with ${AppState.giveaway.entries} participants`);
+      console.log(`Timer beendet mit ${AppState.giveaway.entries} Teilnehmern`);
+      console.groupEnd();
       
       if (AppState.giveaway.entries > 0) {
-        console.log('🎯 Auto-picking winner due to timer end');
+        console.log('Automatische Gewinner-Auswahl durch Timer-Ende');
         
         // Setze Status auf PAUSED um weitere Teilnahmen zu verhindern
         StateManager.updateStatus('PAUSED');
@@ -267,13 +330,13 @@ const Validators = {
             // Verwende die Server API für korrekten Winner Pick
             await EventHandlers.pickWinner();
           } catch (error) {
-            console.error('❌ Failed to pick winner on timer end:', error);
+            console.error('Fehler bei automatischer Gewinner-Auswahl:', error);
             UIManager.showToast('Failed to pick winner automatically', 'error');
             StateManager.updateStatus('INACTIVE');
           }
         }, 500);
       } else {
-        console.log('❌ Timer ended with no participants');
+        console.log('Timer beendet ohne Teilnehmer');
         StateManager.updateStatus('INACTIVE');
         UIManager.showToast('Giveaway ended - No participants joined', 'error');
       }
@@ -286,7 +349,9 @@ const Validators = {
       const oldStatus = AppState.giveaway.status;
       AppState.giveaway.status = newStatus;
       
-      console.log(`📄 Status changed: ${oldStatus} → ${newStatus}`, data);
+    console.group('🎮 Status');
+    console.log(`Status geändert: ${oldStatus} → ${newStatus}`);
+    console.groupEnd();
       
       this.updateStatusDisplay();
       this.updateButtonStates();
@@ -353,11 +418,17 @@ const Validators = {
       switch (AppState.giveaway.status) {
         case 'ACTIVE':
           elements.startBtn.className = 'btn btn--gray btn--active';
-          elements.startBtn.innerHTML = '<i data-lucide="square"></i> Giveaway Active';
+          elements.startBtn.textContent = 'Giveaway Active';
+          const icon = document.createElement('i');
+          icon.setAttribute('data-lucide', 'square');
+          elements.startBtn.prepend(icon);
           elements.startBtn.disabled = true;
           
           elements.pauseBtn.className = 'btn btn--orange';
-          elements.pauseBtn.innerHTML = '<i data-lucide="pause"></i> Pause';
+          elements.pauseBtn.textContent = 'Pause';
+          const pauseIcon = document.createElement('i');
+          pauseIcon.setAttribute('data-lucide', 'pause');
+          elements.pauseBtn.prepend(pauseIcon);
           elements.pauseBtn.disabled = false;
           
           elements.pickBtn.disabled = false;
@@ -366,11 +437,17 @@ const Validators = {
           
         case 'PAUSED':
           elements.startBtn.className = 'btn btn--primary';
-          elements.startBtn.innerHTML = '<i data-lucide="play"></i> Resume Giveaway';
+          elements.startBtn.textContent = 'Resume Giveaway';
+          const resumeIcon = document.createElement('i');
+          resumeIcon.setAttribute('data-lucide', 'play');
+          elements.startBtn.prepend(resumeIcon);
           elements.startBtn.disabled = false;
           
           elements.pauseBtn.className = 'btn btn--gray';
-          elements.pauseBtn.innerHTML = '<i data-lucide="pause"></i> Pause';
+          elements.pauseBtn.textContent = 'Pause';
+          const pauseIcon2 = document.createElement('i');
+          pauseIcon2.setAttribute('data-lucide', 'pause');
+          elements.pauseBtn.prepend(pauseIcon2);
           elements.pauseBtn.disabled = true;
           
           elements.pickBtn.className = 'btn btn--success';
@@ -380,16 +457,33 @@ const Validators = {
           
         default:
           elements.startBtn.className = 'btn btn--primary';
-          elements.startBtn.innerHTML = '<i data-lucide="play"></i> Start Giveaway';
+          elements.startBtn.textContent = 'Start Giveaway';
+          const startIcon = document.createElement('i');
+          startIcon.setAttribute('data-lucide', 'play');
+          elements.startBtn.prepend(startIcon);
           elements.startBtn.disabled = AppState.ui.isStarting;
           
           elements.pauseBtn.className = 'btn btn--warn';
-          elements.pauseBtn.innerHTML = '<i data-lucide="pause"></i> Pause';
+          elements.pauseBtn.textContent = 'Pause';
+          const pauseIcon3 = document.createElement('i');
+          pauseIcon3.setAttribute('data-lucide', 'pause');
+          elements.pauseBtn.prepend(pauseIcon3);
           elements.pauseBtn.disabled = true;
           
           elements.pickBtn.disabled = AppState.giveaway.entries === 0;
           elements.resetBtn.disabled = true;
           break;
+      }
+      
+      // Update test participants button state
+      const testParticipantsBtn = document.getElementById('testParticipantsBtn');
+      if (testParticipantsBtn) {
+        const isActive = AppState.giveaway.status === 'ACTIVE';
+        testParticipantsBtn.disabled = !isActive;
+        testParticipantsBtn.style.opacity = isActive ? '0.8' : '0.4';
+        testParticipantsBtn.title = isActive 
+          ? 'Test-Teilnehmer hinzufügen (20 Stück)'
+          : 'Test-Teilnehmer können nur bei aktivem Giveaway hinzugefügt werden';
       }
       
       lucide.createIcons();
@@ -493,7 +587,8 @@ showResetConfirmation() {
   });
   
   setTimeout(() => resetToast.classList.add('toast--show'), 10);
-  console.log('⚠️ Reset confirmation shown in toast container');
+  console.group('🔄 Reset');
+  console.log('Reset Bestätigung angezeigt');
 },
 
 hideResetConfirmation() {
@@ -501,7 +596,8 @@ hideResetConfirmation() {
   if (resetToast) {
     resetToast.classList.remove('toast--show');
     setTimeout(() => resetToast.remove(), 300);
-    console.log('⚠️ Reset confirmation hidden');
+    console.log('Reset Bestätigung versteckt');
+    console.groupEnd();
   }
 },
     
@@ -561,30 +657,32 @@ hideResetConfirmation() {
 
     async loadSettings() {
       try {
-        console.log('⚙️ Loading settings from server...');
+        console.group('⚙️ Einstellungen');
+        console.log('Lade Einstellungen vom Server...');
         
         // Lade Luck Settings
         const luckResponse = await fetch('/api/settings/luck');
         if (luckResponse.ok) {
           this.currentSettings.luck = await luckResponse.json();
-          console.log('💎 Loaded luck settings:', this.currentSettings.luck);
+          console.log('Glück-Einstellungen geladen:', this.currentSettings.luck);
         }
 
         // Lade General Settings
         const generalResponse = await fetch('/api/settings/general');
         if (generalResponse.ok) {
           this.currentSettings.general = await generalResponse.json();
-          console.log('⚡️ Loaded general settings:', this.currentSettings.general);
+          console.log('Allgemeine Einstellungen geladen:', this.currentSettings.general);
         }
 
         this.updateSettingsUI();
       } catch (error) {
-        console.error('Failed to load settings:', error);
+        console.error('Fehler beim Laden der Einstellungen:', error);
+        console.groupEnd();
       }
     },
 
     updateSettingsUI() {
-      console.log('⚙️ Updating settings UI...');
+      console.log('Aktualisiere Einstellungs-UI...');
       
       // Update Bit Badge Sliders
       const bitSliders = document.querySelectorAll('[data-bits-range]');
@@ -597,7 +695,7 @@ hideResetConfirmation() {
           if (output) {
             output.textContent = `${setting.mult.toFixed(2)}x`;
           }
-          console.log(`💎 Updated bit slider for ${minValue}: ${setting.mult}x`);
+          console.log(`Bit-Regler aktualisiert für ${minValue}: ${setting.mult}x`);
         }
       });
 
@@ -612,7 +710,7 @@ hideResetConfirmation() {
           if (output) {
             output.textContent = `${setting.mult.toFixed(2)}x`;
           }
-          console.log(`👑 Updated sub slider for ${minValue}: ${setting.mult}x`);
+          console.log(`Sub-Regler aktualisiert für ${minValue}: ${setting.mult}x`);
         }
       });
 
@@ -704,7 +802,7 @@ hideResetConfirmation() {
           lucide.createIcons(saveButton);
         }
         
-        console.log('💾 Saving all settings to server...', this.currentSettings);
+        console.log('Speichere alle Einstellungen auf Server...', this.currentSettings);
         
         const luckResponse = await fetch('/api/settings/luck', {
           method: 'PUT',
@@ -728,7 +826,8 @@ hideResetConfirmation() {
           }
           
           UIManager.showToast('Settings saved and applied successfully!', 'success');
-          console.log('✅ All settings saved and applied:', this.currentSettings);
+          console.log('Alle Einstellungen gespeichert und angewendet:', this.currentSettings);
+          console.groupEnd();
           
           AppState.settings.autoJoinHost = this.currentSettings.general.autoJoinHost;
           
@@ -746,7 +845,8 @@ hideResetConfirmation() {
           throw new Error('Failed to save settings');
         }
       } catch (error) {
-        console.error('❌ Failed to save settings:', error);
+        console.error('Fehler beim Speichern der Einstellungen:', error);
+        console.groupEnd();
         UIManager.showToast('Failed to save settings', 'error');
         
         if (saveButton) {
@@ -857,7 +957,7 @@ validateAndUpdateKeyword(keyword) {
         return await response.json();
       }
     } catch (e) {
-      console.error('Failed to load user info:', e);
+      console.error('Fehler beim Laden der Benutzer-Info:', e);
     }
     return null;
   }
@@ -908,13 +1008,13 @@ validateAndUpdateKeyword(keyword) {
   const EventHandlers = {
     async startGiveaway() {
   if (AppState.ui.isStarting || AppState.giveaway.status === 'ACTIVE') {
-    console.log('🎬 Start already in progress or giveaway active');
+    console.warn('Start bereits in Bearbeitung oder Giveaway aktiv');
     return;
   }
   
   // ✅ KORRIGIERT: Warte bis Settings vollständig geladen sind
   if (!SettingsManager.currentSettings || !SettingsManager.currentSettings.general) {
-    console.log('⏳ Settings not loaded yet, waiting...');
+    console.warn('Einstellungen noch nicht geladen, warte...');
     UIManager.showToast('Please wait for settings to load', 'error');
     return;
   }
@@ -924,7 +1024,8 @@ validateAndUpdateKeyword(keyword) {
   
   try {
     const settings = SettingsManager.getStartSettings();
-        console.log('🎬 Starting giveaway with settings:', settings);
+        console.group('🎬 Giveaway Start');
+        console.log('Starte Giveaway mit Einstellungen:', settings);
         
 // ✅ KORRIGIERT: Verwende aktuelle Settings für autoJoinHost
 const currentAutoJoin = SettingsManager.currentSettings.general.autoJoinHost || false;
@@ -953,7 +1054,8 @@ const res = await fetch('/api/giveaway/start', {
           throw new Error('Failed to start giveaway');
         }
       } catch (e) {
-        console.error('❌ Start failed:', e);
+        console.error('Fehler beim Starten:', e);
+        console.groupEnd();
         UIManager.showToast('Failed to start giveaway: ' + e.message, 'error');
       } finally {
         AppState.ui.isStarting = false;
@@ -973,11 +1075,12 @@ const res = await fetch('/api/giveaway/start', {
           endpoint = '/api/giveaway/resume';
           actionName = 'resume';
         } else {
-          console.log('🎬 Cannot pause/resume - giveaway not active');
+          console.warn('Pause/Fortsetzen nicht möglich - Giveaway nicht aktiv');
           return;
         }
         
-        console.log(`🎮 Attempting to ${actionName} giveaway... Current status:`, AppState.giveaway.status);
+        console.group(`🎮 ${actionName}`);
+        console.log(`Versuche Giveaway zu ${actionName}... Status:`, AppState.giveaway.status);
         const res = await fetch(endpoint, { 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
@@ -985,22 +1088,25 @@ const res = await fetch('/api/giveaway/start', {
         
         if (res.ok) {
           const data = await res.json();
-          console.log(`✅ ${actionName} request successful:`, data);
+          console.log(`${actionName} erfolgreich:`, data);
+          console.groupEnd();
           UIManager.showToast(`Giveaway ${actionName}d successfully!`);
         } else {
           const errorData = await res.json().catch(() => ({}));
-          console.error(`❌ ${actionName} failed:`, res.status, errorData);
+          console.error(`${actionName} fehlgeschlagen:`, res.status, errorData);
+          console.groupEnd();
           throw new Error(`Server responded with status ${res.status}: ${errorData.error || 'Unknown error'}`);
         }
       } catch (e) {
-        console.error(`❌ ${AppState.giveaway.status === 'ACTIVE' ? 'Pause' : 'Resume'} failed:`, e);
+        console.error(`${AppState.giveaway.status === 'ACTIVE' ? 'Pause' : 'Fortsetzen'} fehlgeschlagen:`, e);
+        console.groupEnd();
         UIManager.showToast(`Failed to ${AppState.giveaway.status === 'ACTIVE' ? 'pause' : 'resume'} giveaway: ${e.message}`, 'error');
       }
     },
     
     async pickWinner() {
       if (AppState.ui.isPicking) {
-        console.log('🎯 Pick already in progress, ignoring');
+        console.warn('Gewinner-Auswahl bereits in Bearbeitung');
         return;
       }
       
@@ -1013,7 +1119,8 @@ const res = await fetch('/api/giveaway/start', {
       StateManager.updateButtonStates();
       
       try {
-        console.log(`🏆 Picking winner from ${AppState.giveaway.entries} participants`);
+        console.group('🏆 Gewinner-Auswahl');
+        console.log(`Wähle Gewinner aus ${AppState.giveaway.entries} Teilnehmern`);
         
         const res = await fetch('/api/giveaway/end', { 
           method: 'POST',
@@ -1028,18 +1135,21 @@ const res = await fetch('/api/giveaway/start', {
         const data = await res.json();
         
         if (data.winner) {
-          console.log('🎉 Winner selected:', data.winner.displayName || data.winner.login);
+          console.log('Gewinner ausgewählt:', data.winner.displayName || data.winner.login);
+          console.groupEnd();
           StateManager.updateStatus('INACTIVE');
           UIManager.showToast(`Winner selected: ${data.winner.displayName || data.winner.login}!`, 'success');
         } else if (data.error === 'no_participants') {
-          console.log('❌ No participants error from server');
+          console.log('Keine Teilnehmer Fehler vom Server');
+          console.groupEnd();
           UIManager.showToast('No participants to pick from!', 'error');
           StateManager.updateStatus('INACTIVE');
         } else {
           throw new Error('Unexpected response from server');
         }
       } catch (e) {
-        console.error('❌ Pick winner failed:', e);
+        console.error('Gewinner-Auswahl fehlgeschlagen:', e);
+        console.groupEnd();
         UIManager.showToast('Failed to pick winner: ' + e.message, 'error');
         // Bei Fehler zurück zu ACTIVE oder PAUSED je nach vorherigem Status
         if (AppState.giveaway.isTimedMode && AppState.giveaway.timeRemaining > 0) {
@@ -1071,10 +1181,12 @@ const res = await fetch('/api/giveaway/start', {
         if (res.ok) {
           StateManager.updateStatus('INACTIVE');
           UIManager.showToast('Giveaway reset successfully');
-          console.log('✅ Giveaway reset completed');
+          console.log('Giveaway zurückgesetzt');
+          console.groupEnd();
         }
       } catch (e) {
-        console.error('❌ Reset failed:', e);
+        console.error('Reset fehlgeschlagen:', e);
+        console.groupEnd();
         UIManager.showToast('Failed to reset giveaway', 'error');
       } finally {
         AppState.ui.isResetting = false;
@@ -1083,7 +1195,8 @@ const res = await fetch('/api/giveaway/start', {
     
     cancelReset() {
       UIManager.hideResetConfirmation();
-      console.log('❌ Reset cancelled');
+      console.log('Reset abgebrochen');
+      console.groupEnd();
     }
   };
 
@@ -1164,14 +1277,12 @@ const res = await fetch('/api/giveaway/start', {
   async function showWinnerModal(winner) {
     const existingModal = document.querySelector('.modal--show');
     if (existingModal) {
-      console.log('Modal already open, closing previous one');
       existingModal.classList.remove('modal--show');
     }
     
     const confettiContainer = document.getElementById('confettiContainer');
     if (confettiContainer) {
       confettiContainer.innerHTML = '';
-      console.log('🎉 Cleared previous confetti');
     }
     
     AppState.winner.currentWinner = winner;
@@ -1199,10 +1310,10 @@ const res = await fetch('/api/giveaway/start', {
       winnerAvatar.src = winner.profileImageUrl;
       winnerAvatar.style.display = 'block';
       if (winnerAvatarFallback) winnerAvatarFallback.style.display = 'none';
-      console.log('🖼️ Setting winner avatar:', winner.profileImageUrl);
+      console.log('Setze Gewinner Avatar:', winner.profileImageUrl);
       
       winnerAvatar.onerror = () => {
-        console.log('❌ Failed to load winner avatar, using fallback');
+        console.log('Avatar laden fehlgeschlagen, verwende Fallback');
         winnerAvatar.style.display = 'none';
         if (winnerAvatarFallback) {
           winnerAvatarFallback.style.display = 'flex';
@@ -1215,7 +1326,7 @@ const res = await fetch('/api/giveaway/start', {
         winnerAvatarFallback.style.display = 'flex';
         winnerAvatarFallback.textContent = (winner.displayName || winner.login).charAt(0).toUpperCase();
       }
-      console.log('⚠️ No profile image for winner, using fallback');
+      console.log('Kein Profilbild für Gewinner, verwende Fallback');
     }
     
     if (winnerLuck) {
@@ -1249,7 +1360,7 @@ const res = await fetch('/api/giveaway/start', {
           }
         }
       } catch (e) {
-        console.error('Failed to load user info:', e);
+        console.error('Fehler beim Laden der Benutzer-Info:', e);
         const createdAtEl = document.getElementById('winnerCreatedAt');
         if (createdAtEl) {
           createdAtEl.textContent = 'Error loading data';
@@ -1277,7 +1388,9 @@ const res = await fetch('/api/giveaway/start', {
       }, 1000);
     }
     
-    console.log('🏆 Winner modal opened for:', winner.displayName || winner.login);
+    console.group('🏆 Gewinner Modal');
+    console.log('Gewinner Modal geöffnet für:', winner.displayName || winner.login);
+    console.groupEnd();
   }
 
   // Statuspoint helper
@@ -1325,6 +1438,87 @@ const res = await fetch('/api/giveaway/start', {
     messages.forEach(msg => checkMessageWrap(msg));
   });
 
+  // ===================== EMOTE ENHANCEMENT FUNCTIONS =====================
+  function enhanceEmotesInMessage(messageElement) {
+    const emoteImages = messageElement.querySelectorAll('img.chat-emote');
+    
+    emoteImages.forEach(img => {
+      // No click handlers - emotes are just decorative
+      
+      // Improve loading and error handling
+      img.addEventListener('load', () => {
+        img.classList.add('emote-loaded');
+      });
+      
+      img.addEventListener('error', () => {
+        img.classList.add('emote-error');
+      });
+      
+      // Add better accessibility
+      if (!img.getAttribute('tabindex')) {
+        img.setAttribute('tabindex', '0');
+      }
+      
+      // Enhanced tooltips based on provider
+      if (img.title) {
+        const provider = img.className.includes('emote-bttv') ? 'BTTV' :
+                        img.className.includes('emote-ffz') ? 'FFZ' :
+                        img.className.includes('emote-7tv') ? '7TV' : 'Twitch';
+        
+        const emoteName = img.alt || 'Unknown';
+        img.title = `${emoteName} (${provider})`;
+      }
+    });
+    
+    // Text emotes are just decorative - no interactions needed
+  }
+  
+  // Removed emote inspection functions
+  
+  function showTextEmoteDetails(originalText, emoji) {
+    UIManager.showToast(`${originalText} → ${emoji}`, 'success');
+  }
+  
+  function showEmotePopup(name, provider, url) {
+    // Remove existing popup
+    const existingPopup = document.getElementById('emotePopup');
+    if (existingPopup) existingPopup.remove();
+    
+    const popup = document.createElement('div');
+    popup.id = 'emotePopup';
+    popup.className = 'emote-popup';
+    popup.innerHTML = `
+      <div class="emote-popup-content">
+        <img src="${escapeHtml(url)}" alt="${escapeHtml(name)}" class="emote-popup-image">
+        <div class="emote-popup-info">
+          <div class="emote-name">${escapeHtml(name)}</div>
+          <div class="emote-provider">${escapeHtml(provider)}</div>
+        </div>
+        <button class="emote-popup-close">×</button>
+      </div>
+    `;
+    
+    document.body.appendChild(popup);
+    
+    // Add secure event listener for close button
+    const closeBtn = popup.querySelector('.emote-popup-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => popup.remove());
+    }
+    
+    // Position popup at cursor (simplified)
+    popup.style.position = 'fixed';
+    popup.style.top = '50%';
+    popup.style.left = '50%';
+    popup.style.transform = 'translate(-50%, -50%)';
+    popup.style.zIndex = '10000';
+    
+    // Auto-close after 3 seconds
+    setTimeout(() => {
+      if (popup.parentElement) popup.remove();
+    }, 3000);
+  }
+
   // ===================== INITIALIZE SOCKET.IO MIT AUTHENTICATION =====================
   const socket = io();
   
@@ -1335,7 +1529,8 @@ const res = await fetch('/api/giveaway/start', {
     // Authentifiziere den Socket mit der Benutzer-ID
     if (AppState.user && AppState.user.id) {
       socket.emit('auth', AppState.user.id);
-      console.log('🔐 Authenticated socket for user:', AppState.user.id);
+      console.group('🔌 Socket');
+      console.log('Socket authentifiziert für Benutzer:', AppState.user.id);
     }
   });
   
@@ -1345,7 +1540,7 @@ const res = await fetch('/api/giveaway/start', {
     // Bei Reconnect erneut authentifizieren
     if (AppState.user && AppState.user.id) {
       socket.emit('auth', AppState.user.id);
-      console.log('🔐 Re-authenticated socket for user:', AppState.user.id);
+      console.log('Socket erneut authentifiziert für Benutzer:', AppState.user.id);
     }
   });
   
@@ -1355,27 +1550,27 @@ const res = await fetch('/api/giveaway/start', {
   
   // Listen for settings updates from server
   socket.on('settings:luck_updated', (newLuckSettings) => {
-    console.log('🎯 Received updated luck settings:', newLuckSettings);
+    console.log('Glück-Einstellungen erhalten:', newLuckSettings);
     SettingsManager.currentSettings.luck = newLuckSettings;
     SettingsManager.updateSettingsUI();
   });
   
   socket.on('settings:general_updated', (newGeneralSettings) => {
-    console.log('⚡️ Received updated general settings:', newGeneralSettings);
+    console.log('Allgemeine Einstellungen erhalten:', newGeneralSettings);
     SettingsManager.currentSettings.general = newGeneralSettings;
     AppState.settings.autoJoinHost = newGeneralSettings.autoJoinHost;
     SettingsManager.updateSettingsUI();
   });
   
   socket.on('giveaway:status', (status) => {
-    console.log('📡 Received giveaway status:', status);
+    console.log('Giveaway Status erhalten:', status);
     
     const oldStatus = AppState.giveaway.status;
     
     if (status.state) {
       const newStatus = status.state === 'collect' ? 'ACTIVE' : 
                        status.state === 'locked' ? 'PAUSED' : 'INACTIVE';
-      console.log('🎮 Status update from server:', status.state, '→', newStatus, 'Old:', oldStatus);
+      console.log('Status-Update vom Server:', status.state, '→', newStatus, 'Alt:', oldStatus);
       
       AppState.giveaway.status = newStatus;
       StateManager.updateStatusDisplay();
@@ -1392,7 +1587,7 @@ const res = await fetch('/api/giveaway/start', {
     // Timer NUR bei echtem Start (mit duration) neu starten
     if (status.duration !== undefined && oldStatus === 'INACTIVE') {
       const durationSeconds = status.duration * 60; // Convert minutes to seconds
-      console.log('⏰ Starting new timer with duration:', durationSeconds, 'seconds');
+      console.log('Starte neuen Timer mit Dauer:', durationSeconds, 'Sekunden');
       if (durationSeconds > 0) {
         AppState.giveaway.isTimedMode = true;
         TimerManager.start(durationSeconds);
@@ -1404,13 +1599,13 @@ const res = await fetch('/api/giveaway/start', {
     
     // Bei Resume ohne duration wird Timer einfach fortgesetzt
     if (oldStatus === 'PAUSED' && newStatus === 'ACTIVE' && !status.duration) {
-      console.log('▶️ Resume - Timer continues from:', TimeUtils.secondsToFormat(AppState.giveaway.timeRemaining));
+      console.log('Fortsetzen - Timer läuft weiter von:', TimeUtils.secondsToFormat(AppState.giveaway.timeRemaining));
     }
   });
   
   // KORRIGIERTE participant:add Handler
   socket.on('participant:add', (p) => {
-    console.log('👥 Participant added:', p);
+    console.log('Teilnehmer hinzugefügt:', p.login);
     AppState.giveaway.entries++;
     StateManager.updateEntriesDisplay();
     StateManager.updateButtonStates();
@@ -1419,7 +1614,7 @@ const res = await fetch('/api/giveaway/start', {
     
     const existingParticipant = elements.participantsList.querySelector(`[data-remove="${p.login}"]`);
     if (existingParticipant) {
-      console.log('🎮 Participant already exists, skipping:', p.login);
+      console.log('Teilnehmer existiert bereits:', p.login);
       return;
     }
     
@@ -1427,7 +1622,6 @@ const res = await fetch('/api/giveaway/start', {
     updateParticipantCount();
     checkScrollbar();
     
-    console.log('✅ Participant added without animation:', p.login);
   });
   
   socket.on('participant:remove', (data) => {
@@ -1461,7 +1655,7 @@ const res = await fetch('/api/giveaway/start', {
   });
 
   socket.on('participant:update', (participant) => {
-    console.log('🎮 Participant updated:', participant.login, 'New luck:', participant.luck);
+    console.log('Teilnehmer aktualisiert:', participant.login, 'Neues Glück:', participant.luck);
     
     const participantItem = elements.participantsList?.querySelector(`[data-login="${participant.login}"]`);
     if (participantItem) {
@@ -1496,7 +1690,6 @@ const res = await fetch('/api/giveaway/start', {
           luckDisplay.style.color = 'var(--accent)';
         }, 300);
         
-        console.log(`✅ Updated luck display for ${participant.login}: ${multiplierText}`);
       }
     }
   });
@@ -1557,7 +1750,8 @@ const res = await fetch('/api/giveaway/start', {
       // Nach dem Laden des Benutzers authentifiziere den Socket
       if (socket.connected) {
         socket.emit('auth', AppState.user.id);
-        console.log('🔐 Authenticated socket for user:', AppState.user.id);
+        console.group('🔌 Socket');
+      console.log('Socket authentifiziert für Benutzer:', AppState.user.id);
       }
     } else {
       if (header.name) header.name.textContent = 'YourTwitchName';
@@ -1573,7 +1767,8 @@ const res = await fetch('/api/giveaway/start', {
     if (!conn.ok) throw new Error('connect failed');
     setStatus('ok');
   } catch (e) {
-    console.error('Chat connection failed:', e);
+    console.error('Chat-Verbindung fehlgeschlagen:', e);
+    console.groupEnd();
     setStatus('err');
   }
 
@@ -1606,7 +1801,7 @@ StateManager.updateEntriesDisplay();
     
     setTimeout(() => checkScrollbar(), 100);
   } catch (e) {
-    console.error('Failed to load participants:', e);
+    console.error('Fehler beim Laden der Teilnehmer:', e);
   }
 
   try {
@@ -1617,7 +1812,7 @@ StateManager.updateEntriesDisplay();
       StateManager.updateKeywordDisplay();
     }
   } catch (e) {
-    console.error('Failed to load keyword:', e);
+    console.error('Fehler beim Laden des Schlüsselworts:', e);
   }
 
   // Tab switching
@@ -1669,14 +1864,12 @@ StateManager.updateEntriesDisplay();
     }
     
     setTimeout(() => {
-      console.log('🎊 Stopping new confetti creation');
       const confettiElements = container.querySelectorAll('.confetti');
       confettiElements.forEach(element => {
         element.style.animationIterationCount = '1';
       });
       
       setTimeout(() => {
-        console.log('🎊 Clearing remaining confetti');
         container.innerHTML = '';
       }, 5000);
     }, 5000);
@@ -1686,7 +1879,8 @@ StateManager.updateEntriesDisplay();
     const modal = document.getElementById('winnerModal');
     if (modal) {
       modal.classList.remove('modal--show');
-      console.log('🏆 Winner modal manually closed by user');
+      console.log('Gewinner Modal manuell geschlossen');
+      console.groupEnd();
       
       const confettiContainer = document.getElementById('confettiContainer');
       if (confettiContainer) {
@@ -1717,7 +1911,7 @@ StateManager.updateEntriesDisplay();
       
       setTimeout(() => {
         StateManager.updateEntriesDisplay();
-        console.log('🗑️ Participants list cleared with animation');
+        console.log('Teilnehmerliste geleert');
       }, participants.length * 50 + 200);
     }
   }
@@ -1758,13 +1952,10 @@ StateManager.updateEntriesDisplay();
 
   // ✅ KORRIGIERTE renderParticipant Funktion mit FIXED Luck Display
   function renderParticipant(p) {
-    console.log('🎨 Rendering participant:', p.login, 'Luck:', p.luck);
     const login = p.login || p.name || p.user || '';
     const display = p.displayName || p.display || login;
     const avatar = p.profileImageUrl || p.avatar || p.avatarUrl || '';
     const luck = p.luck || p.mult || 1.0;
-    const badges = renderBadges(p.badges);
-    
     // ✅ KORRIGIERT: Zeige immer "X.XXx" Format, nie "No Multiplier"
     const multiplierText = `${Math.max(1.0, luck).toFixed(2)}x`;
     
@@ -1789,7 +1980,6 @@ StateManager.updateEntriesDisplay();
           </div>
           <div class="participant-info">
             <div class="participant-name">
-              ${badges}
               <span class="nick">${display}</span>
             </div>
             <div class="participant-luck">${multiplierText}</div>
@@ -1813,7 +2003,8 @@ StateManager.updateEntriesDisplay();
         e.stopPropagation();
         
         const lg = removeBtn.dataset.remove;
-        console.log('🗑️ Attempting to remove participant:', lg);
+        console.group('🗑️ Teilnehmer entfernen');
+        console.log('Versuche Teilnehmer zu entfernen:', lg);
         
         try {
           const res = await fetch(`/api/giveaway/participants/${encodeURIComponent(lg)}`, { 
@@ -1824,7 +2015,8 @@ StateManager.updateEntriesDisplay();
           });
           
           if (res.ok) {
-            console.log('✅ Participant removed successfully:', lg);
+            console.log('Teilnehmer erfolgreich entfernt:', lg);
+            console.groupEnd();
             li.style.opacity = '0';
             li.style.transform = 'translateX(-20px)';
             li.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
@@ -1834,11 +2026,13 @@ StateManager.updateEntriesDisplay();
             }, 200);
           } else {
             const errorData = await res.json().catch(() => ({}));
-            console.error('❌ Failed to remove participant:', res.status, errorData);
+            console.error('Fehler beim Entfernen des Teilnehmers:', res.status, errorData);
+            console.groupEnd();
             UIManager.showToast(`Failed to remove ${lg}`, 'error');
           }
         } catch (error) {
-          console.error('❌ Error removing participant:', error);
+          console.error('Fehler beim Entfernen des Teilnehmers:', error);
+          console.groupEnd();
           UIManager.showToast(`Error removing ${lg}`, 'error');
         }
       });
@@ -1850,17 +2044,14 @@ StateManager.updateEntriesDisplay();
   function updateParticipantCount() {
     const allParticipants = elements.participantsList ? elements.participantsList.children.length : 0;
     
-    console.log('📊 Updating participant count:', allParticipants);
     AppState.giveaway.entries = allParticipants;
     StateManager.updateEntriesDisplay();
     
     if (elements.emptyPanel && elements.participantsList) {
       if (allParticipants === 0) {
-        console.log('🎮 Showing empty panel');
         elements.emptyPanel.style.display = 'flex';
         elements.participantsList.style.display = 'none';
       } else {
-        console.log('🎮 Hiding empty panel, showing participants');
         elements.emptyPanel.style.display = 'none';
         elements.participantsList.style.display = 'flex';
         checkScrollbar();
@@ -1896,15 +2087,430 @@ StateManager.updateEntriesDisplay();
         input.value = '';
       }
     } catch (e) {
-      console.error('Send message failed:', e);
+      console.error('Nachricht senden fehlgeschlagen:', e);
     }
   });
+
+  // ===================== EMOTE AUTOCOMPLETE SYSTEM =====================
+  const EmoteAutocomplete = {
+    emoteList: new Map(),
+    isVisible: false,
+    selectedIndex: -1,
+    suggestions: [],
+    
+    init() {
+      this.loadEmoteList();
+      this.setupChatInput();
+    },
+    
+    async loadEmoteList() {
+      try {
+        console.group('😀 Emotes');
+        console.log('Lade Emotes vom Backend...');
+        const response = await fetch('/api/emotes/all');
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        this.emoteList.clear();
+        data.emotes.forEach(emote => {
+          this.emoteList.set(emote.name.toLowerCase(), emote);
+        });
+        
+        console.log(`${this.emoteList.size} Emotes für Autocomplete geladen:`, data.providers);
+        
+        // Show success notification
+        UIManager.showToast(`Loaded ${data.count} emotes from ${Object.keys(data.providers).length} providers`, 'success');
+        
+      } catch (error) {
+        console.error('Fehler beim Laden der Emotes:', error);
+        console.groupEnd();
+        
+        // Fallback to hardcoded emotes
+        const fallbackEmotes = [
+          { name: 'Kappa', provider: 'Twitch', url: 'https://static-cdn.jtvnw.net/emoticons/v2/25/default/dark/1.0' },
+          { name: 'PogChamp', provider: 'Twitch', url: 'https://static-cdn.jtvnw.net/emoticons/v2/88/default/dark/1.0' },
+          { name: 'KEKW', provider: 'BTTV', url: 'https://cdn.betterttv.net/emote/5e9c6c187e090362f8b0b9e8/1x' },
+          { name: 'EZ', provider: 'BTTV', url: 'https://cdn.betterttv.net/emote/5590b223b344e2c42a9e28e3/1x' },
+          { name: 'OMEGALUL', provider: 'BTTV', url: 'https://cdn.betterttv.net/emote/583089f4737a8e61abb0186b/1x' }
+        ];
+        
+        this.emoteList.clear();
+        fallbackEmotes.forEach(emote => {
+          this.emoteList.set(emote.name.toLowerCase(), emote);
+        });
+        
+        console.log(`Verwende Fallback Emotes: ${this.emoteList.size} Emotes`);
+        console.groupEnd();
+        UIManager.showToast('Using offline emote cache', 'warn');
+      }
+    },
+    
+    async refreshEmotes() {
+      try {
+        console.log('Emotes werden aktualisiert...');
+        UIManager.showToast('Refreshing emotes...', 'info');
+        
+        const response = await fetch('/api/emotes/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log('Emotes aktualisiert:', data.counts);
+        
+        // Reload emote list
+        await this.loadEmoteList();
+        
+        UIManager.showToast(`Refreshed ${Object.values(data.counts).reduce((a, b) => a + b, 0)} emotes`, 'success');
+        
+      } catch (error) {
+        console.error('Fehler beim Aktualisieren der Emotes:', error);
+        UIManager.showToast('Failed to refresh emotes', 'error');
+      }
+    },
+    
+    async testEmoteParsing() {
+      const testText = prompt('Enter text to test emote parsing (e.g., "Kappa KEKW :) :D <3"):');
+      if (!testText) return;
+      
+      try {
+        UIManager.showToast('Testing emote parsing...', 'info');
+        
+        const response = await fetch('/api/emotes/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: testText })
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        console.group('🧪 Emote Parsing Test Results');
+        console.groupEnd();
+        
+        // Show a preview in chat
+        const testMessage = {
+          channel: 'test',
+          user: 'Test User',
+          userId: 'test',
+          text: data.originalText,
+          message: data.finalResult,
+          color: '#ff6b6b',
+          badges: [],
+          luck: 1,
+          multiplierText: '1.00x',
+          timestamp: new Date().toISOString(),
+          isParticipant: false,
+          profileImageUrl: null,
+          isTest: true
+        };
+        
+        // Temporarily emit to chat for visual testing
+        if (elements.chatList) {
+          const empty = elements.chatList.querySelector('.empty');
+          if (empty) empty.remove();
+          
+          const row = el(`
+            <div class="msg test-msg" style="border-left: 3px solid #ff6b6b;" data-username="Test User">
+              <div class="msg-content">
+                <div class="chat-user-info">
+                  <span class="user" style="color:#ff6b6b">TEST:</span>
+                </div>
+                <span class="msg-text">${data.finalResult}</span>
+              </div>
+            </div>
+          `);
+          elements.chatList.appendChild(row);
+          elements.chatList.scrollTop = elements.chatList.scrollHeight;
+          
+          // Remove test message after 10 seconds
+          setTimeout(() => {
+            if (row.parentNode) row.remove();
+          }, 10000);
+        }
+        
+        UIManager.showToast(`Test completed! Check console for details.`, 'success');
+        
+      } catch (error) {
+        console.error('Fehler beim Testen des Emote-Parsings:', error);
+        UIManager.showToast('Failed to test emote parsing', 'error');
+      }
+    },
+    
+    async showChannelEmotes() {
+      try {
+        // Get current user's channel ID
+        const user = await fetch('/api/me').then(r => r.json());
+        if (!user.loggedIn) {
+          UIManager.showToast('Not logged in', 'error');
+          return;
+        }
+        
+        console.log(`Lade Channel-Emotes für ${user.displayName} (${user.id})...`);
+        
+        const response = await fetch(`/api/emotes/channel/${user.id}`);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        console.group('📺 Channel Emotes for ' + user.displayName);
+        console.log(`Gesamt: ${data.totalEmotes} Emotes`);
+        console.log('Nach Typ:', data.emotesByType);
+        console.groupEnd();
+        
+        // Create a temporary list in chat
+        if (elements.chatList && data.totalEmotes > 0) {
+          const empty = elements.chatList.querySelector('.empty');
+          if (empty) empty.remove();
+          
+          const emotesByType = Object.entries(data.emotesByType);
+          const emotePreview = emotesByType.map(([type, emotes]) => 
+            `<strong>${type.toUpperCase()}:</strong> ${emotes.slice(0, 3).map(e => e.name).join(', ')}${emotes.length > 3 ? ` (+${emotes.length - 3} more)` : ''}`
+          ).join('<br>');
+          
+          const row = el(`
+            <div class="msg info-msg" style="border-left: 3px solid #00d4ff;" data-username="Channel Info">
+              <div class="msg-content">
+                <div class="chat-user-info">
+                  <span class="user" style="color:#00d4ff">📺 CHANNEL EMOTES:</span>
+                </div>
+                <span class="msg-text">
+                  <strong>${data.totalEmotes} emotes available</strong><br>
+                  ${emotePreview}
+                </span>
+              </div>
+            </div>
+          `);
+          elements.chatList.appendChild(row);
+          elements.chatList.scrollTop = elements.chatList.scrollHeight;
+          
+          // Remove info message after 15 seconds
+          setTimeout(() => {
+            if (row.parentNode) row.remove();
+          }, 15000);
+          
+          UIManager.showToast(`Found ${data.totalEmotes} broadcaster emotes`, 'success');
+        } else {
+          UIManager.showToast('No channel emotes found', 'warn');
+        }
+        
+      } catch (error) {
+        console.error('Fehler beim Laden der Channel-Emotes:', error);
+        UIManager.showToast('Failed to get channel emotes', 'error');
+      }
+    },
+    
+    setupChatInput() {
+      const chatInput = document.getElementById('simMsg');
+      if (!chatInput) return;
+      
+      // Create autocomplete container
+      const autocompleteContainer = document.createElement('div');
+      autocompleteContainer.id = 'emoteAutocomplete';
+      autocompleteContainer.className = 'emote-autocomplete hidden';
+      chatInput.parentElement.appendChild(autocompleteContainer);
+      
+      // Input event handlers
+      chatInput.addEventListener('input', (e) => this.handleInput(e));
+      chatInput.addEventListener('keydown', (e) => this.handleKeydown(e));
+      chatInput.addEventListener('blur', () => {
+        // Delay hiding to allow clicking on suggestions
+        setTimeout(() => this.hide(), 150);
+      });
+      
+      // Global click handler to hide autocomplete
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('#emoteAutocomplete') && !e.target.closest('#simMsg')) {
+          this.hide();
+        }
+      });
+    },
+    
+    handleInput(e) {
+      const input = e.target;
+      const text = input.value;
+      const cursorPos = input.selectionStart;
+      
+      // Find word at cursor position
+      const beforeCursor = text.substring(0, cursorPos);
+      const afterCursor = text.substring(cursorPos);
+      
+      // Look for emote pattern (word that might be an emote)
+      const wordMatch = beforeCursor.match(/(\S+)$/);
+      if (!wordMatch) {
+        this.hide();
+        return;
+      }
+      
+      const currentWord = wordMatch[1];
+      
+      // Only show suggestions if word is at least 2 characters
+      if (currentWord.length < 2) {
+        this.hide();
+        return;
+      }
+      
+      this.showSuggestions(currentWord, input);
+    },
+    
+    handleKeydown(e) {
+      if (!this.isVisible) return;
+      
+      switch (e.key) {
+        case 'ArrowDown':
+          e.preventDefault();
+          this.selectedIndex = Math.min(this.selectedIndex + 1, this.suggestions.length - 1);
+          this.updateSelection();
+          break;
+          
+        case 'ArrowUp':
+          e.preventDefault();
+          this.selectedIndex = Math.max(this.selectedIndex - 1, -1);
+          this.updateSelection();
+          break;
+          
+        case 'Enter':
+        case 'Tab':
+          e.preventDefault();
+          if (this.selectedIndex >= 0) {
+            this.insertEmote(this.suggestions[this.selectedIndex], e.target);
+          }
+          break;
+          
+        case 'Escape':
+          this.hide();
+          break;
+      }
+    },
+    
+    showSuggestions(query, inputElement) {
+      const suggestions = [];
+      const queryLower = query.toLowerCase();
+      
+      // Find matching emotes
+      for (const [emoteName, emoteData] of this.emoteList) {
+        if (emoteName.includes(queryLower)) {
+          suggestions.push({
+            ...emoteData,
+            similarity: this.calculateSimilarity(queryLower, emoteName)
+          });
+        }
+      }
+      
+      // Sort by similarity and limit to 8 results
+      suggestions.sort((a, b) => b.similarity - a.similarity);
+      this.suggestions = suggestions.slice(0, 8);
+      
+      if (this.suggestions.length === 0) {
+        this.hide();
+        return;
+      }
+      
+      this.render(inputElement);
+      this.selectedIndex = -1;
+      this.isVisible = true;
+    },
+    
+    calculateSimilarity(query, emoteName) {
+      if (emoteName.startsWith(query)) return 100;
+      if (emoteName.includes(query)) return 50;
+      return 0;
+    },
+    
+    render(inputElement) {
+      const container = document.getElementById('emoteAutocomplete');
+      if (!container) return;
+      
+      container.innerHTML = '';
+      container.className = 'emote-autocomplete';
+      
+      this.suggestions.forEach((emote, index) => {
+        const item = document.createElement('div');
+        item.className = 'emote-suggestion';
+        item.innerHTML = `
+          <img src="${escapeHtml(emote.url)}" alt="${escapeHtml(emote.name)}" class="suggestion-emote" onerror="this.style.display='none'">
+          <div class="suggestion-info">
+            <div class="suggestion-name">${escapeHtml(emote.name)}</div>
+            <div class="suggestion-provider">${escapeHtml(emote.provider)}</div>
+          </div>
+        `;
+        
+        item.addEventListener('click', () => {
+          this.insertEmote(emote, inputElement);
+        });
+        
+        container.appendChild(item);
+      });
+      
+      // Position the autocomplete
+      const inputRect = inputElement.getBoundingClientRect();
+      const containerRect = inputElement.parentElement.getBoundingClientRect();
+      
+      container.style.bottom = `${containerRect.bottom - inputRect.top + 5}px`;
+      container.style.left = '0';
+      container.style.right = '0';
+    },
+    
+    updateSelection() {
+      const suggestions = document.querySelectorAll('.emote-suggestion');
+      suggestions.forEach((item, index) => {
+        item.classList.toggle('selected', index === this.selectedIndex);
+      });
+    },
+    
+    insertEmote(emote, inputElement) {
+      const text = inputElement.value;
+      const cursorPos = inputElement.selectionStart;
+      
+      // Find the word to replace
+      const beforeCursor = text.substring(0, cursorPos);
+      const afterCursor = text.substring(cursorPos);
+      const wordMatch = beforeCursor.match(/(\S+)$/);
+      
+      if (wordMatch) {
+        const wordStart = cursorPos - wordMatch[1].length;
+        const newText = text.substring(0, wordStart) + emote.name + ' ' + afterCursor;
+        
+        inputElement.value = newText;
+        inputElement.setSelectionRange(wordStart + emote.name.length + 1, wordStart + emote.name.length + 1);
+        inputElement.focus();
+      }
+      
+      this.hide();
+    },
+    
+    hide() {
+      const container = document.getElementById('emoteAutocomplete');
+      if (container) {
+        container.className = 'emote-autocomplete hidden';
+      }
+      this.isVisible = false;
+      this.selectedIndex = -1;
+      this.suggestions = [];
+    }
+  };
 
   document.getElementById('simMsg')?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       document.getElementById('sendSim')?.click();
     }
   });
+  
+  // Initialize emote autocomplete
+  EmoteAutocomplete.init();
 
   // Track angezeigte Nachrichten um Duplikate zu verhindern
   const displayedMessages = new Map();
@@ -1924,7 +2530,6 @@ StateManager.updateEntriesDisplay();
       });
       
       if (existing) {
-        console.log('💬 Skipping duplicate message:', ev.user, ev.text);
         return;
       }
     }
@@ -1950,7 +2555,8 @@ StateManager.updateEntriesDisplay();
     const multiplierText = (ev.luck && ev.luck > 1) ? `${ev.luck.toFixed(2)}x` : '';
     const isParticipant = ev.isParticipant || false;
     
-    console.log('💬 Displaying chat message:', {
+    console.group('💬 Chat Nachricht');
+    console.log('Zeige Chat-Nachricht:', {
       user: name,
       badgeCount: (ev.badges || []).length,
       badges: (ev.badges || []).map(b => b.name),
@@ -1962,18 +2568,21 @@ StateManager.updateEntriesDisplay();
     if (empty) empty.remove();
     
     const row = el(`
-      <div class="msg ${isParticipant ? 'participant-msg' : ''}">
+      <div class="msg ${isParticipant ? 'participant-msg' : ''}" data-username="${escapeHtml(name)}">
         <div class="msg-content">
           <div class="chat-user-info">
             ${badges}
             <span class="user" style="color:${color}">${escapeHtml(name)}:</span>
             ${multiplierText ? `<span class="luck-indicator">${multiplierText}</span>` : ''}
           </div>
-          <span class="msg-text">${msg}</span>
+          <span class="msg-text">${escapeHtml(msg)}</span>
         </div>
       </div>
     `);
     elements.chatList.appendChild(row);
+    
+    // Enhance emotes in the message
+    enhanceEmotesInMessage(row);
     
     // Check if message should wrap like Twitch
     checkMessageWrap(row);
@@ -1991,7 +2600,8 @@ StateManager.updateEntriesDisplay();
 
   socket.on('host:auto_joined', (hostParticipant) => {
     if (!elements.participantsList) return;
-    console.log('Host auto-joined:', hostParticipant);
+    console.log('Host automatisch beigetreten:', hostParticipant.login);
+    console.groupEnd();
     
     const existingHost = elements.participantsList.querySelector(`[data-remove="${hostParticipant.login}"]`);
     if (!existingHost) {
@@ -2083,17 +2693,327 @@ StateManager.updateEntriesDisplay();
     }
   });
 
-  console.log('🎬 Enhanced ZinxyBot Dashboard fully initialized with MM:SS time format!');
-  console.log('🔐 User authentication and session isolation active');
-  console.log('⏰ Timer-end bug fixed - participants will be correctly picked');
-  console.log('🕐 MM:SS time format implemented with 10-second increments');
+  console.group('🎬 ZinxyBot Dashboard');
+  console.log('Enhanced ZinxyBot Dashboard vollständig initialisiert mit MM:SS Zeitformat!');
+  // Add event listener for emote refresh button
+  const refreshEmotesBtn = document.getElementById('refreshEmotesBtn');
+  if (refreshEmotesBtn) {
+    refreshEmotesBtn.addEventListener('click', () => {
+      EmoteAutocomplete.refreshEmotes();
+    });
+  }
+  
+  // Add event listener for emote test button
+  const testEmotesBtn = document.getElementById('testEmotesBtn');
+  if (testEmotesBtn) {
+    testEmotesBtn.addEventListener('click', () => {
+      EmoteAutocomplete.testEmoteParsing();
+    });
+  }
+  
+  // Add event listener for channel emotes button
+  const channelEmotesBtn = document.getElementById('channelEmotesBtn');
+  if (channelEmotesBtn) {
+    channelEmotesBtn.addEventListener('click', () => {
+      EmoteAutocomplete.showChannelEmotes();
+    });
+  }
+  
+  // Add event listener for refresh chat button
+  const refreshChatBtn = document.getElementById('refreshChatBtn');
+  if (refreshChatBtn) {
+    refreshChatBtn.addEventListener('click', () => {
+      refreshChat();
+    });
+  }
+  
+  // Add event listener for test participants button
+  const testParticipantsBtn = document.getElementById('testParticipantsBtn');
+  if (testParticipantsBtn) {
+    testParticipantsBtn.addEventListener('click', () => {
+      addTestParticipants();
+    });
+  }
+  
+  console.log('Benutzer-Authentifizierung und Session-Isolierung aktiv');
+  console.log('Timer-Ende-Bug behoben - Teilnehmer werden korrekt ausgewählt');
+  console.log('MM:SS Zeitformat mit 10-Sekunden-Schritten implementiert');
+  console.groupEnd();
+  
+  // Add test function for visualizing 20 participants
+  window.addTestParticipants = addTestParticipants;
+  
+  // Initialize admin system
+  AdminSystem.init();
 }
 
+// Chat refresh function to reset the live chat when it's not working properly
+function refreshChat() {
+  console.group('🔄 Chat Refresh');
+  console.log('Chat wird aktualisiert...');
+  
+  // Show initial toast
+  if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+    UIManager.showToast('Refreshing chat...', 'info');
+  }
+  
+  // Get refresh button and add animation
+  const refreshBtn = document.getElementById('refreshChatBtn');
+  const refreshIcon = refreshBtn?.querySelector('i');
+  
+  // Add spinning animation to refresh button
+  if (refreshIcon) {
+    refreshIcon.style.animation = 'spin 1s linear infinite';
+  }
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.style.opacity = '0.5';
+  }
+  
+  // Get chat container and animate existing messages out
+  const chatList = document.getElementById('chatList');
+  const existingMessages = chatList?.querySelectorAll('.msg');
+  
+  if (existingMessages && existingMessages.length > 0) {
+    // Animate all messages out at once (same as participant removal)
+    existingMessages.forEach((message) => {
+      message.style.opacity = '0';
+      message.style.transform = 'translateX(-20px)';
+      message.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+    });
+    
+    // Wait for animation to complete before showing empty state
+    setTimeout(() => {
+      // Remove all messages at once
+      existingMessages.forEach(message => message.remove());
+      showEmptyState();
+      completeRefresh();
+    }, 200);
+  } else {
+    // No messages to animate, proceed directly
+    showEmptyState();
+    setTimeout(completeRefresh, 200);
+  }
+  
+  function showEmptyState() {
+    if (chatList) {
+      // Clear any remaining content
+      chatList.innerHTML = '';
+      
+      // Add back the empty state with animation
+      const emptyState = document.createElement('div');
+      emptyState.className = 'empty';
+      emptyState.setAttribute('role', 'status');
+      emptyState.style.opacity = '0';
+      emptyState.style.transform = 'translateY(10px)';
+      emptyState.innerHTML = `
+        <i data-lucide="message-square" aria-hidden="true"></i>
+        <p>No chat messages</p>
+      `;
+      chatList.appendChild(emptyState);
+      
+      // Re-initialize the Lucide icons for the empty state
+      lucide.createIcons(emptyState);
+      
+      // Animate empty state in
+      setTimeout(() => {
+        emptyState.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+        emptyState.style.opacity = '1';
+        emptyState.style.transform = 'translateY(0)';
+      }, 50);
+    }
+  }
+  
+  function completeRefresh() {
+    // Clear the message cache to prevent duplicates
+    if (typeof displayedMessages !== 'undefined') {
+      displayedMessages.clear();
+    }
+    
+    // Reconnect socket if it exists
+    if (typeof socket !== 'undefined' && socket) {
+      console.log('Socket wird neu verbunden...');
+      socket.disconnect();
+      socket.connect();
+    }
+    
+    // Reset refresh button
+    if (refreshIcon) {
+      refreshIcon.style.animation = '';
+    }
+    if (refreshBtn) {
+      refreshBtn.disabled = false;
+      refreshBtn.style.opacity = '';
+    }
+    
+    // Show success toast
+    if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+      UIManager.showToast('Chat refreshed successfully', 'success');
+    }
+    
+    console.log('Chat-Aktualisierung abgeschlossen');
+    console.groupEnd();
+  }
+}
+
+// Helper function to create participant elements for testing
+function createTestParticipant(participant) {
+  const login = participant.login || '';
+  const display = participant.displayName || login;
+  const avatar = participant.profileImageUrl;
+  const luck = participant.luck || 1.0;
+  const multiplierText = `${Math.max(1.0, luck).toFixed(2)}x`;
+  
+  let avatarHtml;
+  if (avatar) {
+    avatarHtml = `
+      <img src="${avatar}" alt="${display}" class="participant-avatar" 
+           onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+      <div class="participant-avatar-fallback" style="display:none;">${display.charAt(0).toUpperCase()}</div>
+    `;
+  } else {
+    avatarHtml = `
+      <div class="participant-avatar-fallback">${display.charAt(0).toUpperCase()}</div>
+    `;
+  }
+  
+  const li = document.createElement('li');
+  li.className = 'row participant-row';
+  li.setAttribute('data-login', login);
+  li.innerHTML = `
+    <div class="who">
+      <div class="avatar">
+        ${avatarHtml}
+      </div>
+      <div class="participant-info">
+        <div class="participant-name">
+          <span class="nick">${display}</span>
+        </div>
+        <div class="participant-luck">${multiplierText}</div>
+      </div>
+    </div>
+    <div class="acts">
+      <button data-remove="${login}" title="Remove" class="remove-participant-btn">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+  `;
+  
+  // Initialize Lucide icons for the new element
+  if (typeof lucide !== 'undefined' && lucide.createIcons) {
+    lucide.createIcons(li);
+  }
+  
+  return li;
+}
+
+// Test function to add 20 mock participants for visualization
+function addTestParticipants() {
+  // Check if giveaway is active
+  if (typeof AppState !== 'undefined' && AppState.giveaway.status !== 'ACTIVE') {
+    if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+      UIManager.showToast('Test-Teilnehmer können nur bei aktivem Giveaway hinzugefügt werden', 'warning');
+    }
+    return;
+  }
+  
+  // Get DOM elements directly since we're outside the boot() scope
+  const participantsList = document.getElementById('participantsList');
+  const participantCount = document.getElementById('participantCount');
+  const entriesEl = document.getElementById('entries');
+  const emptyPanel = document.getElementById('emptyPanel');
+  
+  if (!participantsList) {
+    console.error('Teilnehmerliste nicht gefunden');
+    return;
+  }
+  
+  console.group('🧪 Test Teilnehmer');
+  console.log('Füge 20 Test-Teilnehmer hinzu...');
+  
+  const mockParticipants = [
+    { login: 'streamer_pro', displayName: 'StreamerPro', luck: 5.0, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/aaa-profile_image-300x300.png' },
+    { login: 'gamer_legend', displayName: 'GamerLegend', luck: 3.5, profileImageUrl: null },
+    { login: 'twitch_master', displayName: 'TwitchMaster', luck: 2.8, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/bbb-profile_image-300x300.png' },
+    { login: 'chat_king', displayName: 'ChatKing', luck: 4.2, profileImageUrl: null },
+    { login: 'viewer_123', displayName: 'Viewer123', luck: 1.0, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/ccc-profile_image-300x300.png' },
+    { login: 'emoji_user', displayName: 'EmojiUser😎', luck: 1.8, profileImageUrl: null },
+    { login: 'sub_veteran', displayName: 'SubVeteran', luck: 6.0, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/ddd-profile_image-300x300.png' },
+    { login: 'bit_supporter', displayName: 'BitSupporter', luck: 3.0, profileImageUrl: null },
+    { login: 'longtime_fan', displayName: 'LongtimeFan', luck: 2.5, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/eee-profile_image-300x300.png' },
+    { login: 'new_viewer', displayName: 'NewViewer', luck: 1.0, profileImageUrl: null },
+    { login: 'mod_helper', displayName: 'ModHelper', luck: 4.5, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/fff-profile_image-300x300.png' },
+    { login: 'clip_creator', displayName: 'ClipCreator', luck: 2.2, profileImageUrl: null },
+    { login: 'raid_leader', displayName: 'RaidLeader', luck: 3.8, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/ggg-profile_image-300x300.png' },
+    { login: 'emote_spammer', displayName: 'EmoteSpammer', luck: 1.5, profileImageUrl: null },
+    { login: 'question_asker', displayName: 'QuestionAsker', luck: 1.3, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/hhh-profile_image-300x300.png' },
+    { login: 'hype_train_conductor', displayName: 'HypeTrainConductor', luck: 7.5, profileImageUrl: null },
+    { login: 'donation_hero', displayName: 'DonationHero', luck: 8.0, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/iii-profile_image-300x300.png' },
+    { login: 'lurker_supreme', displayName: 'LurkerSupreme', luck: 1.1, profileImageUrl: null },
+    { login: 'stream_sniper', displayName: 'StreamSniper', luck: 2.0, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/jjj-profile_image-300x300.png' },
+    { login: 'community_builder', displayName: 'CommunityBuilder', luck: 5.5, profileImageUrl: null }
+  ];
+  
+  // Clear existing participants (except remove empty panel if it exists)
+  if (emptyPanel) {
+    emptyPanel.remove();
+  }
+  
+  // Add each mock participant via normal participant system
+  mockParticipants.forEach((participant, index) => {
+    setTimeout(() => {
+      // Send participant to server - the server will handle adding and broadcasting back
+      if (typeof socket !== 'undefined' && socket.connected) {
+        socket.emit('test-participant-add', {
+          login: participant.login,
+          displayName: participant.displayName,
+          luck: participant.luck,
+          profileImageUrl: participant.profileImageUrl || null,
+          isTestParticipant: true
+        });
+      }
+    }, index * 50); // Staggered timing
+  });
+  
+  // Update AppState if available
+  if (typeof AppState !== 'undefined') {
+    AppState.giveaway.entries = mockParticipants.length;
+  }
+  
+  console.log(`${mockParticipants.length} Test-Teilnehmer hinzugefügt`);
+  console.log('Zum Löschen: Seite aktualisieren oder neues Giveaway starten');
+  console.groupEnd();
+}
+
+// Enhanced HTML escaping with additional security measures
 function escapeHtml(s) {
-  return String(s)
+  if (typeof s !== 'string') {
+    s = String(s || '');
+  }
+  
+  return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
+    .replace(/'/g, '&#x27;')
+    .replace(/\//g, '&#x2F;')
+    .replace(/`/g, '&#x60;')
+    .replace(/=/g, '&#x3D;');
+}
+
+// Additional security function to remove dangerous attributes and scripts
+function sanitizeText(text) {
+  if (typeof text !== 'string') {
+    return '';
+  }
+  
+  // Remove any potential script tags or dangerous content
+  return text
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/javascript:/gi, '')
+    .replace(/on\w+\s*=/gi, '')
+    .replace(/data:/gi, '')
+    .replace(/vbscript:/gi, '');
 }
