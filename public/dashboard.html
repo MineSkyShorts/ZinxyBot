@@ -35,6 +35,9 @@
     </nav>
     <div class="user">
       <div class="status ok" title="Connected"></div>
+      <div class="admin-crown admin-feature" id="adminCrown" title="Admin User">
+        <i data-lucide="crown" aria-hidden="true"></i>
+      </div>
       <img class="avatar" src="assets/avatar.svg" alt="avatar" />
       <span class="name">Loading...</span>
       <button class="ghost" id="logoutBtn" title="Logout">
@@ -181,6 +184,9 @@
                  placeholder="Search participants..." 
                  aria-label="Search participants" />
           <i data-lucide="search" aria-hidden="true"></i>
+          <button id="testParticipantsBtn" class="btn btn--ghost btn--xs test-participants-btn admin-feature" title="Add 20 test participants (only when giveaway is active)" type="button" disabled>
+            <i data-lucide="users-round" aria-hidden="true"></i>
+          </button>
         </div>
       </div>
       
@@ -204,6 +210,9 @@
         <h3 id="chat-heading">
           <i data-lucide="message-circle" aria-hidden="true"></i>
           Live Chat
+          <button id="refreshChatBtn" class="btn btn--ghost btn--xs refresh-chat-btn" title="Refresh live chat">
+            <i data-lucide="rotate-cw" aria-hidden="true"></i>
+          </button>
         </h3>
         <div class="chat" id="chatList" role="log" aria-live="polite" aria-label="Live chat messages">
           <div class="empty" role="status">
@@ -418,6 +427,106 @@
       border: 0;
     }
     
+    /* Emote styles */
+    .chat-emote {
+      height: 28px;
+      width: auto;
+      margin: 0 2px;
+      vertical-align: middle;
+      display: inline-block;
+    }
+    
+    .emote-bttv, .emote-ffz, .emote-7tv {
+      height: 28px;
+      width: auto;
+      margin: 0 2px;
+      vertical-align: middle;
+      display: inline-block;
+    }
+    
+    .text-emote {
+      height: 24px !important;
+      width: 24px !important;
+      margin: 0 1px;
+      vertical-align: middle;
+      display: inline-block;
+      border-radius: 2px;
+    }
+    
+    .chat h3 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    
+    .btn--sm {
+      padding: 4px 8px;
+      font-size: 0.8rem;
+      height: auto;
+      min-height: 28px;
+    }
+    
+    .btn--xs {
+      padding: 2px 6px;
+      font-size: 0.75rem;
+      height: auto;
+      min-height: 24px;
+    }
+    
+    .refresh-chat-btn {
+      margin-left: auto;
+      opacity: 0.7;
+      transition: opacity 0.2s ease;
+    }
+    
+    .refresh-chat-btn:hover {
+      opacity: 1;
+    }
+    
+    .refresh-chat-btn i {
+      width: 14px;
+      height: 14px;
+    }
+    
+    .test-participants-btn {
+      margin-left: 8px;
+      opacity: 0.8;
+      transition: all 0.2s ease;
+      background: var(--bg-soft);
+      border: 1px solid rgba(255,255,255,.1);
+      color: var(--text);
+      cursor: pointer;
+    }
+    
+    .test-participants-btn:hover {
+      opacity: 1;
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+    
+    .test-participants-btn:active {
+      transform: translateY(0);
+    }
+    
+    .test-participants-btn i {
+      width: 14px;
+      height: 14px;
+    }
+    
+    .search-field {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    /* Spin animation for refresh button */
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    
     /* Ensure focus indicators are visible */
     *:focus-visible {
       outline: 2px solid var(--accent);
@@ -511,6 +620,38 @@
     .time-input.valid {
       border-color: var(--success);
       box-shadow: 0 0 0 3px rgba(34,197,94,.1);
+    }
+
+    /* Admin Features */
+    .admin-feature {
+      display: none;
+    }
+
+    .admin-logged-in .admin-feature {
+      display: block;
+    }
+
+    /* Admin Crown Icon */
+    .admin-crown {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      margin-left: 6px;
+      margin-right: 6px;
+      opacity: 0.9;
+    }
+
+    .admin-logged-in .admin-crown {
+      display: flex;
+    }
+
+    .admin-crown i {
+      width: 18px;
+      height: 18px;
+      color: #ffd700;
+      filter: drop-shadow(0 1px 2px rgba(255, 215, 0, 0.4));
     }
   </style>
 </body>
