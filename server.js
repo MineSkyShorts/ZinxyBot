@@ -217,7 +217,12 @@ const textEmotes = {
 };
 
 // ===================== TWITCH API URLs =====================
+const TWITCH_AUTH = 'https://id.twitch.tv/oauth2/authorize';
+const TWITCH_TOKEN = 'https://id.twitch.tv/oauth2/token';
 const TWITCH_API = 'https://api.twitch.tv/helix';
+
+// ===================== BASE SCOPES =====================
+const BASE_SCOPES = ['chat:read','chat:edit','channel:read:subscriptions','bits:read','moderator:read:followers','user:read:emotes'];
 
 // ===================== BENUTZERSPEZIFISCHE SESSION MANAGEMENT =====================
 function getUserSession(userId) {
@@ -1778,8 +1783,91 @@ async function ensureTmiClient(sessionData, userId) {
   return userSession.tmiClient;
 }
 
-// ===================== AUTH ROUTES REMOVED =====================
-// OAuth wird von Twitch direkt gehandhabt
+// ===================== AUTH ROUTES =====================
+app.get('/auth/twitch', (req, res) => {
+  const state = crypto.randomBytes(32).toString('hex');
+  req.session.oauthState = state;
+  
+  const authUrl = `${TWITCH_AUTH}?client_id=${process.env.TWITCH_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.TWITCH_REDIRECT_URI)}&response_type=code&scope=${encodeURIComponent(BASE_SCOPES.join(' '))}&state=${state}`;
+  res.redirect(authUrl);
+});
+
+app.get('/auth/twitch/callback', async (req, res) => {
+  try {
+    const { code, state, error, error_description } = req.query;
+    
+    if (error) {
+      console.error('OAuth error from Twitch:', error, error_description);
+      return res.redirect('/?error=' + encodeURIComponent(error_description || error));
+    }
+    
+    if (!state || state !== req.session.oauthState) {
+      console.error('OAuth state mismatch');
+      return res.redirect('/?error=invalid_state');
+    }
+    
+    delete req.session.oauthState;
+    
+    if (!code) {
+      console.error('No authorization code received');
+      return res.redirect('/?error=no_code');
+    }
+    
+    const tokenBody = new URLSearchParams({
+      client_id: process.env.TWITCH_CLIENT_ID,
+      client_secret: process.env.TWITCH_CLIENT_SECRET,
+      code,
+      grant_type: 'authorization_code',
+      redirect_uri: process.env.TWITCH_REDIRECT_URI
+    });
+    
+    const tokenResponse = await axios.post(TWITCH_TOKEN, tokenBody.toString(), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+    
+    const tokens = tokenResponse.data;
+    
+    if (!tokens.access_token) {
+      console.error('No access token received');
+      return res.redirect('/?error=no_token');
+    }
+    
+    req.session.twitch = { 
+      access_token: tokens.access_token, 
+      refresh_token: tokens.refresh_token
+    };
+
+    const userResponse = await axios.get(`${TWITCH_API}/users`, {
+      headers: {
+        'Client-Id': process.env.TWITCH_CLIENT_ID,
+        'Authorization': `Bearer ${tokens.access_token}`
+      }
+    });
+    
+    const userData = userResponse.data;
+    if (!userData.data || userData.data.length === 0) {
+      console.error('No user data received');
+      return res.redirect('/?error=no_user_data');
+    }
+    
+    const me = userData.data[0];
+    req.session.user = {
+      id: me.id,
+      login: me.login,
+      display_name: me.display_name,
+      profile_image_url: me.profile_image_url,
+      color: '#a970ff'
+    };
+
+    console.log(`✅ User ${me.display_name} (${me.login}) authenticated`);
+    res.redirect('/dashboard');
+    
+  } catch (e) {
+    console.error('OAuth callback error:', e.response?.data || e.message);
+    const errorMsg = e.response?.data?.message || e.message || 'Authentication failed';
+    res.redirect('/?error=' + encodeURIComponent(errorMsg));
+  }
+});
 
 // Debug route for development (remove in production)
 app.get('/debug/session', (req, res) => {
