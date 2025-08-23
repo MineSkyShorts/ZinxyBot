@@ -547,13 +547,17 @@ async function loadBTTVEmotes(channelId = null) {
       });
       bttvEmotes.clear();
       globalResponse.data.forEach(emote => {
+        // BTTV emotes: check if animated property exists
+        const isAnimated = emote.animated || false;
+        
         bttvEmotes.set(emote.code, {
           id: emote.id,
           name: emote.code,
           url: `https://cdn.betterttv.net/emote/${emote.id}/1x`,
           url_2x: `https://cdn.betterttv.net/emote/${emote.id}/2x`,
           url_4x: `https://cdn.betterttv.net/emote/${emote.id}/3x`,
-          provider: 'bttv'
+          provider: 'bttv',
+          animated: isAnimated
         });
       });
       emoteCache.markUpdated('bttv');
@@ -565,24 +569,32 @@ async function loadBTTVEmotes(channelId = null) {
           timeout: 10000
         });
         channelResponse.data.channelEmotes?.forEach(emote => {
+          // BTTV emotes: check if animated property exists
+          const isAnimated = emote.animated || false;
+          
           bttvEmotes.set(emote.code, {
             id: emote.id,
             name: emote.code,
             url: `https://cdn.betterttv.net/emote/${emote.id}/1x`,
             url_2x: `https://cdn.betterttv.net/emote/${emote.id}/2x`,
             url_4x: `https://cdn.betterttv.net/emote/${emote.id}/3x`,
-            provider: 'bttv'
+            provider: 'bttv',
+            animated: isAnimated
           });
         });
         
         channelResponse.data.sharedEmotes?.forEach(emote => {
+          // BTTV emotes: check if animated property exists
+          const isAnimated = emote.animated || false;
+          
           bttvEmotes.set(emote.code, {
             id: emote.id,
             name: emote.code,
             url: `https://cdn.betterttv.net/emote/${emote.id}/1x`,
             url_2x: `https://cdn.betterttv.net/emote/${emote.id}/2x`,
             url_4x: `https://cdn.betterttv.net/emote/${emote.id}/3x`,
-            provider: 'bttv'
+            provider: 'bttv',
+            animated: isAnimated
           });
         });
       } catch (e) {
@@ -604,13 +616,17 @@ async function loadFFZEmotes(channelId = null) {
     Object.values(globalResponse.data.sets).forEach(set => {
       set.emoticons?.forEach(emote => {
         const urls = emote.urls;
+        // FFZ emotes: check if animated property exists
+        const isAnimated = emote.animated || false;
+        
         ffzEmotes.set(emote.name, {
           id: emote.id,
           name: emote.name,
           url: `https:${urls['1'] || urls['2'] || urls['4']}`,
           url_2x: `https:${urls['2'] || urls['1'] || urls['4']}`,
           url_4x: `https:${urls['4'] || urls['2'] || urls['1']}`,
-          provider: 'ffz'
+          provider: 'ffz',
+          animated: isAnimated
         });
       });
     });
@@ -623,13 +639,17 @@ async function loadFFZEmotes(channelId = null) {
         Object.values(channelResponse.data.sets).forEach(set => {
           set.emoticons?.forEach(emote => {
             const urls = emote.urls;
+            // FFZ emotes: check if animated property exists
+            const isAnimated = emote.animated || false;
+            
             ffzEmotes.set(emote.name, {
               id: emote.id,
               name: emote.name,
               url: `https:${urls['1'] || urls['2'] || urls['4']}`,
               url_2x: `https:${urls['2'] || urls['1'] || urls['4']}`,
               url_4x: `https:${urls['4'] || urls['2'] || urls['1']}`,
-              provider: 'ffz'
+              provider: 'ffz',
+              animated: isAnimated
             });
           });
         });
@@ -651,13 +671,18 @@ async function load7TVEmotes(channelId = null) {
     });
     seventvEmotes.clear();
     globalResponse.data.emotes?.forEach(emote => {
+      // Check if emote is animated by looking for animated flag
+      const isAnimated = emote.flags && (emote.flags & 1) !== 0; // Flag 1 = animated
+      const format = isAnimated ? 'gif' : 'webp';
+      
       seventvEmotes.set(emote.name, {
         id: emote.id,
         name: emote.name,
-        url: `https://cdn.7tv.app/emote/${emote.id}/1x.webp`,
-        url_2x: `https://cdn.7tv.app/emote/${emote.id}/2x.webp`,
-        url_4x: `https://cdn.7tv.app/emote/${emote.id}/4x.webp`,
-        provider: '7tv'
+        url: `https://cdn.7tv.app/emote/${emote.id}/1x.${format}`,
+        url_2x: `https://cdn.7tv.app/emote/${emote.id}/2x.${format}`,
+        url_4x: `https://cdn.7tv.app/emote/${emote.id}/4x.${format}`,
+        provider: '7tv',
+        animated: isAnimated
       });
     });
     
@@ -677,13 +702,18 @@ async function load7TVEmotes(channelId = null) {
         
         if (emoteSet && emoteSet.emotes) {
           emoteSet.emotes.forEach(emote => {
+            // Check if emote is animated by looking for animated flag
+            const isAnimated = emote.flags && (emote.flags & 1) !== 0; // Flag 1 = animated
+            const format = isAnimated ? 'gif' : 'webp';
+            
             seventvEmotes.set(emote.name, {
               id: emote.id,
               name: emote.name,
-              url: `https://cdn.7tv.app/emote/${emote.id}/1x.webp`,
-              url_2x: `https://cdn.7tv.app/emote/${emote.id}/2x.webp`,
-              url_4x: `https://cdn.7tv.app/emote/${emote.id}/4x.webp`,
-              provider: '7tv'
+              url: `https://cdn.7tv.app/emote/${emote.id}/1x.${format}`,
+              url_2x: `https://cdn.7tv.app/emote/${emote.id}/2x.${format}`,
+              url_4x: `https://cdn.7tv.app/emote/${emote.id}/4x.${format}`,
+              provider: '7tv',
+              animated: isAnimated
             });
           });
         }
@@ -1018,17 +1048,30 @@ async function collectEmoteData(text, twitchEmotes = null, userId = null, messag
   // Helper function to find emotes in text and add to emoteData array
   function findEmotesInText(text, emoteMap, provider) {
     for (const [emoteName, emote] of emoteMap.entries()) {
-      const regex = new RegExp(`\\b${escapeRegExp(emoteName)}\\b`, 'g');
-      let match;
-      while ((match = regex.exec(text)) !== null) {
-        emoteData.push({
-          name: emoteName,
-          url: emote.url,
-          url_2x: emote.url_2x || emote.url,
-          provider: provider,
-          start: match.index,
-          end: match.index + emoteName.length
-        });
+      // Use Unicode-aware word boundaries that work with foreign characters
+      const patterns = [
+        new RegExp(`(?<=^|\\s)${escapeRegExp(emoteName)}(?=\\s|$)`, 'gu'), // Space boundaries (Unicode aware)
+        new RegExp(`\\b${escapeRegExp(emoteName)}\\b`, 'g'), // Traditional word boundaries
+        new RegExp(escapeRegExp(emoteName), 'g') // Fallback: exact match
+      ];
+      
+      let foundMatch = false;
+      for (const regex of patterns) {
+        let match;
+        regex.lastIndex = 0; // Reset regex
+        while ((match = regex.exec(text)) !== null) {
+          emoteData.push({
+            name: emoteName,
+            url: emote.url,
+            url_2x: emote.url_2x || emote.url,
+            provider: provider,
+            animated: emote.animated || false,
+            start: match.index,
+            end: match.index + emoteName.length
+          });
+          foundMatch = true;
+        }
+        if (foundMatch) break; // Don't try other patterns if we found matches
       }
     }
   }
