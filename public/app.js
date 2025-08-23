@@ -49,7 +49,7 @@ const AdminSystem = {
       
       // Update crown tooltip with username
       if (adminCrown) {
-        adminCrown.title = `Admin User: ${username}`;
+        adminCrown.title = "Admin";
       }
       
       console.log(`Admin Berechtigung aktiv für ${username} (ID: ${userId})`);
@@ -516,18 +516,9 @@ const Validators = {
       
       if (AppState.giveaway.status === 'ACTIVE' || AppState.giveaway.status === 'PAUSED') {
         const keywordInfo = `<span class="keyword-hint">Type <code>${AppState.giveaway.keyword}</code> to enter</span>`;
-        elements.participantsHeader.innerHTML = `
-          <i data-lucide="users" aria-hidden="true"></i>
-          ${baseText}
-          ${countElement}
-          ${keywordInfo}
-        `;
+        elements.participantsHeader.innerHTML = `<i data-lucide="users" aria-hidden="true"></i>${baseText} ${countElement}${keywordInfo}`;
       } else {
-        elements.participantsHeader.innerHTML = `
-          <i data-lucide="users" aria-hidden="true"></i>
-          ${baseText}
-          ${countElement}
-        `;
+        elements.participantsHeader.innerHTML = `<i data-lucide="users" aria-hidden="true"></i>${baseText} ${countElement}`;
       }
       
       lucide.createIcons(elements.participantsHeader);
@@ -1218,6 +1209,9 @@ const res = await fetch('/api/giveaway/start', {
         
         e.target.value = value;
         SettingsManager.validateAndUpdateDuration(value);
+        
+        // Remove validation classes when losing focus
+        e.target.classList.remove('valid', 'invalid');
       });
       
       // Real-time validation feedback
@@ -1620,13 +1614,27 @@ const res = await fetch('/api/giveaway/start', {
   // ===================== INITIALIZE SOCKET.IO MIT AUTHENTICATION =====================
   const socket = io();
   
+  // Make socket available globally for helper functions
+  window.socket = socket;
+  
+  // Local helper function for safe socket operations within boot scope
+  function localSafeSocketEmit(eventName, data, callback) {
+    if (typeof socket !== 'undefined' && socket && socket.connected) {
+      socket.emit(eventName, data, callback);
+      return true;
+    } else {
+      console.warn('Socket nicht verfügbar oder nicht verbunden. Event:', eventName);
+      return false;
+    }
+  }
+  
   // Nach der Socket-Verbindung authentifizieren wir den Benutzer
   socket.on('connect', () => {
     setStatus('ok');
     
     // Authentifiziere den Socket mit der Benutzer-ID
     if (AppState.user && AppState.user.id) {
-      socket.emit('auth', AppState.user.id);
+      localSafeSocketEmit('auth', AppState.user.id);
       console.group('🔌 Socket');
       console.log('Socket authentifiziert für Benutzer:', AppState.user.id);
     }
@@ -1637,7 +1645,7 @@ const res = await fetch('/api/giveaway/start', {
     
     // Bei Reconnect erneut authentifizieren
     if (AppState.user && AppState.user.id) {
-      socket.emit('auth', AppState.user.id);
+      localSafeSocketEmit('auth', AppState.user.id);
       console.log('Socket erneut authentifiziert für Benutzer:', AppState.user.id);
     }
   });
@@ -1811,6 +1819,8 @@ const res = await fetch('/api/giveaway/start', {
   // Settings Event Listeners
   elements.keywordInput?.addEventListener('blur', (e) => {
     SettingsManager.validateAndUpdateKeyword(e.target.value);
+    // Remove validation classes when losing focus
+    e.target.classList.remove('valid', 'invalid');
   });
   
   elements.keywordInput?.addEventListener('input', (e) => {
@@ -1846,10 +1856,10 @@ const res = await fetch('/api/giveaway/start', {
       }
       
       // Nach dem Laden des Benutzers authentifiziere den Socket
-      if (socket.connected) {
-        socket.emit('auth', AppState.user.id);
+      const success = localSafeSocketEmit('auth', AppState.user.id);
+      if (success) {
         console.group('🔌 Socket');
-      console.log('Socket authentifiziert für Benutzer:', AppState.user.id);
+        console.log('Socket authentifiziert für Benutzer:', AppState.user.id);
       }
     } else {
       if (header.name) header.name.textContent = 'YourTwitchName';
@@ -2009,7 +2019,34 @@ StateManager.updateEntriesDisplay();
       
       setTimeout(() => {
         StateManager.updateEntriesDisplay();
+        updateParticipantCount();
         console.log('Teilnehmerliste geleert');
+      }, participants.length * 50 + 200);
+    }
+  }
+
+  function clearParticipantsListAfterWinner() {
+    if (elements.participantsList) {
+      const participants = Array.from(elements.participantsList.children);
+      participants.forEach((participant, index) => {
+        setTimeout(() => {
+          participant.style.opacity = '0';
+          participant.style.transform = 'translateX(-20px)';
+          participant.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+          setTimeout(() => participant.remove(), 200);
+        }, index * 50);
+      });
+      
+      // Longer delay before showing empty message after winner
+      setTimeout(() => {
+        StateManager.updateEntriesDisplay();
+        // Don't call updateParticipantCount immediately after winner
+        console.log('Teilnehmerliste nach Gewinner geleert');
+        
+        // Show empty panel after additional delay
+        setTimeout(() => {
+          updateParticipantCount();
+        }, 2000);
       }, participants.length * 50 + 200);
     }
   }
@@ -2498,19 +2535,42 @@ StateManager.updateEntriesDisplay();
       const suggestions = [];
       const queryLower = query.toLowerCase();
       
-      // Find matching emotes
-      for (const [emoteName, emoteData] of this.emoteList) {
-        if (emoteName.includes(queryLower)) {
-          suggestions.push({
-            ...emoteData,
-            similarity: this.calculateSimilarity(queryLower, emoteName)
-          });
+      // Check if query is a provider name to show all emotes from that provider
+      const providerMap = {
+        'twitch': 'Twitch',
+        'bttv': 'BTTV', 
+        'ffz': 'FFZ',
+        '7tv': '7TV',
+        'seventv': '7TV'
+      };
+      
+      const isProviderQuery = providerMap[queryLower];
+      
+      if (isProviderQuery) {
+        // Show all emotes from specific provider
+        for (const [emoteName, emoteData] of this.emoteList) {
+          if (emoteData.provider === isProviderQuery) {
+            suggestions.push({
+              ...emoteData,
+              similarity: 80 // Medium priority for provider matches
+            });
+          }
+        }
+      } else {
+        // Find matching emotes by name
+        for (const [emoteName, emoteData] of this.emoteList) {
+          if (emoteName.includes(queryLower)) {
+            suggestions.push({
+              ...emoteData,
+              similarity: this.calculateSimilarity(queryLower, emoteName)
+            });
+          }
         }
       }
       
-      // Sort by similarity and limit to 8 results
+      // Sort by similarity and limit to 12 results (increased for provider queries)
       suggestions.sort((a, b) => b.similarity - a.similarity);
-      this.suggestions = suggestions.slice(0, 8);
+      this.suggestions = suggestions.slice(0, isProviderQuery ? 12 : 8);
       
       if (this.suggestions.length === 0) {
         this.hide();
@@ -2538,10 +2598,15 @@ StateManager.updateEntriesDisplay();
       this.suggestions.forEach((emote, index) => {
         const item = document.createElement('div');
         item.className = 'emote-suggestion';
+        
+        // Add animated class to suggestion emote image if it's animated
+        const animatedClass = emote.animated ? ' emote-animated' : '';
+        const animatedIndicator = emote.animated ? ' 🎬' : '';
+        
         item.innerHTML = `
-          <img src="${escapeHtml(emote.url)}" alt="${escapeHtml(emote.name)}" class="suggestion-emote" onerror="this.style.display='none'">
+          <img src="${escapeHtml(emote.url)}" alt="${escapeHtml(emote.name)}" class="suggestion-emote${animatedClass}" onerror="this.style.display='none'">
           <div class="suggestion-info">
-            <div class="suggestion-name">${escapeHtml(emote.name)}</div>
+            <div class="suggestion-name">${escapeHtml(emote.name)}${animatedIndicator}</div>
             <div class="suggestion-provider">${escapeHtml(emote.provider)}</div>
           </div>
         `;
@@ -2694,7 +2759,7 @@ StateManager.updateEntriesDisplay();
     showWinnerModal(winner);
     
     setTimeout(() => {
-      clearParticipantsList();
+      clearParticipantsListAfterWinner();
     }, 1500);
   });
 
@@ -2708,7 +2773,6 @@ StateManager.updateEntriesDisplay();
       elements.participantsList.appendChild(renderParticipant(hostParticipant));
       updateParticipantCount();
       checkScrollbar();
-      showToast(`Host ${hostParticipant.displayName} auto-joined the giveaway`);
     }
   });
 
@@ -2934,7 +2998,9 @@ function refreshChat() {
     if (typeof socket !== 'undefined' && socket) {
       console.log('Socket wird neu verbunden...');
       socket.disconnect();
-      socket.connect();
+      setTimeout(() => {
+        socket.connect();
+      }, 100); // Small delay to ensure clean disconnect
     }
     
     // Reset refresh button
@@ -3007,10 +3073,34 @@ function createTestParticipant(participant) {
   return li;
 }
 
+// Helper function for safe socket operations
+function safeSocketEmit(eventName, data, callback) {
+  if (typeof window.socket !== 'undefined' && window.socket && window.socket.connected) {
+    console.log(`[Socket] Sende Event: ${eventName}`, data);
+    window.socket.emit(eventName, data, callback);
+    return true;
+  } else {
+    console.warn('Socket nicht verfügbar oder nicht verbunden. Event:', eventName);
+    console.log('Socket-Status:', {
+      socketExists: typeof window.socket !== 'undefined',
+      socket: window.socket,
+      connected: window.socket ? window.socket.connected : 'N/A'
+    });
+    return false;
+  }
+}
+
 // Test function to add 20 mock participants for visualization
 function addTestParticipants() {
+  console.log('Test-Teilnehmer werden hinzugefügt...');
+  console.log('AppState:', {
+    exists: typeof AppState !== 'undefined',
+    giveawayStatus: typeof AppState !== 'undefined' ? AppState.giveaway.status : 'N/A'
+  });
+  
   // Check if giveaway is active
   if (typeof AppState !== 'undefined' && AppState.giveaway.status !== 'ACTIVE') {
+    console.log('Giveaway ist nicht aktiv - Status:', AppState.giveaway.status);
     if (typeof UIManager !== 'undefined' && UIManager.showToast) {
       UIManager.showToast('Test-Teilnehmer können nur bei aktivem Giveaway hinzugefügt werden', 'warning');
     }
@@ -3029,55 +3119,70 @@ function addTestParticipants() {
   }
   
   console.group('🧪 Test Teilnehmer');
-  console.log('Füge 20 Test-Teilnehmer hinzu...');
+  console.log('Füge einen Test-Teilnehmer hinzu...');
   
   const mockParticipants = [
-    { login: 'streamer_pro', displayName: 'StreamerPro', luck: 5.0, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/aaa-profile_image-300x300.png' },
-    { login: 'gamer_legend', displayName: 'GamerLegend', luck: 3.5, profileImageUrl: null },
-    { login: 'twitch_master', displayName: 'TwitchMaster', luck: 2.8, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/bbb-profile_image-300x300.png' },
-    { login: 'chat_king', displayName: 'ChatKing', luck: 4.2, profileImageUrl: null },
-    { login: 'viewer_123', displayName: 'Viewer123', luck: 1.0, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/ccc-profile_image-300x300.png' },
-    { login: 'emoji_user', displayName: 'EmojiUser😎', luck: 1.8, profileImageUrl: null },
-    { login: 'sub_veteran', displayName: 'SubVeteran', luck: 6.0, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/ddd-profile_image-300x300.png' },
-    { login: 'bit_supporter', displayName: 'BitSupporter', luck: 3.0, profileImageUrl: null },
-    { login: 'longtime_fan', displayName: 'LongtimeFan', luck: 2.5, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/eee-profile_image-300x300.png' },
-    { login: 'new_viewer', displayName: 'NewViewer', luck: 1.0, profileImageUrl: null },
-    { login: 'mod_helper', displayName: 'ModHelper', luck: 4.5, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/fff-profile_image-300x300.png' },
-    { login: 'clip_creator', displayName: 'ClipCreator', luck: 2.2, profileImageUrl: null },
-    { login: 'raid_leader', displayName: 'RaidLeader', luck: 3.8, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/ggg-profile_image-300x300.png' },
-    { login: 'emote_spammer', displayName: 'EmoteSpammer', luck: 1.5, profileImageUrl: null },
-    { login: 'question_asker', displayName: 'QuestionAsker', luck: 1.3, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/hhh-profile_image-300x300.png' },
-    { login: 'hype_train_conductor', displayName: 'HypeTrainConductor', luck: 7.5, profileImageUrl: null },
-    { login: 'donation_hero', displayName: 'DonationHero', luck: 8.0, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/iii-profile_image-300x300.png' },
-    { login: 'lurker_supreme', displayName: 'LurkerSupreme', luck: 1.1, profileImageUrl: null },
-    { login: 'stream_sniper', displayName: 'StreamSniper', luck: 2.0, profileImageUrl: 'https://static-cdn.jtvnw.net/jtv_user_pictures/jjj-profile_image-300x300.png' },
-    { login: 'community_builder', displayName: 'CommunityBuilder', luck: 5.5, profileImageUrl: null }
+    { login: 'streamer_pro', displayName: 'StreamerPro', luck: 5.0, profileImageUrl: 'https://picsum.photos/64/64?random=1' },
+    { login: 'gamer_legend', displayName: 'GamerLegend', luck: 3.5, profileImageUrl: 'https://picsum.photos/64/64?random=2' },
+    { login: 'twitch_master', displayName: 'TwitchMaster', luck: 2.8, profileImageUrl: 'https://picsum.photos/64/64?random=3' },
+    { login: 'chat_king', displayName: 'ChatKing', luck: 4.2, profileImageUrl: 'https://picsum.photos/64/64?random=4' },
+    { login: 'viewer_123', displayName: 'Viewer123', luck: 1.0, profileImageUrl: 'https://picsum.photos/64/64?random=5' },
+    { login: 'emoji_user', displayName: 'EmojiUser😎', luck: 1.8, profileImageUrl: 'https://picsum.photos/64/64?random=6' },
+    { login: 'sub_veteran', displayName: 'SubVeteran', luck: 6.0, profileImageUrl: 'https://picsum.photos/64/64?random=7' },
+    { login: 'bit_supporter', displayName: 'BitSupporter', luck: 3.0, profileImageUrl: 'https://picsum.photos/64/64?random=8' },
+    { login: 'longtime_fan', displayName: 'LongtimeFan', luck: 2.5, profileImageUrl: 'https://picsum.photos/64/64?random=9' },
+    { login: 'new_viewer', displayName: 'NewViewer', luck: 1.0, profileImageUrl: 'https://picsum.photos/64/64?random=10' },
+    { login: 'mod_helper', displayName: 'ModHelper', luck: 4.5, profileImageUrl: 'https://picsum.photos/64/64?random=11' },
+    { login: 'clip_creator', displayName: 'ClipCreator', luck: 2.2, profileImageUrl: 'https://picsum.photos/64/64?random=12' },
+    { login: 'raid_leader', displayName: 'RaidLeader', luck: 3.8, profileImageUrl: 'https://picsum.photos/64/64?random=13' },
+    { login: 'emote_spammer', displayName: 'EmoteSpammer', luck: 1.5, profileImageUrl: 'https://picsum.photos/64/64?random=14' },
+    { login: 'question_asker', displayName: 'QuestionAsker', luck: 1.3, profileImageUrl: 'https://picsum.photos/64/64?random=15' },
+    { login: 'hype_train_conductor', displayName: 'HypeTrainConductor', luck: 7.5, profileImageUrl: 'https://picsum.photos/64/64?random=16' },
+    { login: 'donation_hero', displayName: 'DonationHero', luck: 8.0, profileImageUrl: 'https://picsum.photos/64/64?random=17' },
+    { login: 'lurker_supreme', displayName: 'LurkerSupreme', luck: 1.1, profileImageUrl: 'https://picsum.photos/64/64?random=18' },
+    { login: 'stream_sniper', displayName: 'StreamSniper', luck: 2.0, profileImageUrl: 'https://picsum.photos/64/64?random=19' },
+    { login: 'community_builder', displayName: 'CommunityBuilder', luck: 5.5, profileImageUrl: 'https://picsum.photos/64/64?random=20' }
   ];
   
-  // Clear existing participants (except remove empty panel if it exists)
+  // Hide empty panel when adding test participants
   if (emptyPanel) {
-    emptyPanel.remove();
+    emptyPanel.style.display = 'none';
   }
   
-  // Add each mock participant via normal participant system
-  mockParticipants.forEach((participant, index) => {
-    setTimeout(() => {
-      // Send participant to server - the server will handle adding and broadcasting back
-      if (typeof socket !== 'undefined' && socket.connected) {
-        socket.emit('test-participant-add', {
-          login: participant.login,
-          displayName: participant.displayName,
-          luck: participant.luck,
-          profileImageUrl: participant.profileImageUrl || null,
-          isTestParticipant: true
-        });
-      }
-    }, index * 50); // Staggered timing
+  // Pick one random participant from the list
+  const randomIndex = Math.floor(Math.random() * mockParticipants.length);
+  const participant = mockParticipants[randomIndex];
+  
+  // Add unique timestamp to make each participant unique
+  const timestamp = Date.now();
+  participant.login = `${participant.login}_${timestamp}`;
+  
+  // Send participant to server
+  const success = safeSocketEmit('test-participant-add', {
+    login: participant.login,
+    displayName: participant.displayName,
+    luck: participant.luck,
+    profileImageUrl: participant.profileImageUrl || null,
+    isTestParticipant: true
   });
   
-  // Update AppState if available
+  if (success) {
+    console.log(`Sende Test-Teilnehmer: ${participant.login} mit Profilbild: ${participant.profileImageUrl}`);
+  }
+  
+  // Update AppState if available (will be updated by server response)
   if (typeof AppState !== 'undefined') {
-    AppState.giveaway.entries = mockParticipants.length;
+    // Don't manually update entries here - let the server handle it
+  }
+  
+  // Show success notification
+  if (typeof UIManager !== 'undefined' && UIManager.showToast) {
+    UIManager.showToast(`Adding ${mockParticipants.length} test participants...`, 'info');
+    
+    // Show completion toast after all participants are added
+    setTimeout(() => {
+      UIManager.showToast(`Successfully added ${mockParticipants.length} test participants with profile pictures!`, 'success');
+    }, mockParticipants.length * 50 + 500);
   }
   
   console.log(`${mockParticipants.length} Test-Teilnehmer hinzugefügt`);
