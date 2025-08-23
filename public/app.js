@@ -1457,18 +1457,36 @@ const res = await fetch('/api/giveaway/start', {
     // Replace text with emote images
     sortedEmotes.forEach(emote => {
       const emoteName = emote.name;
-      const regex = new RegExp(`\\b${escapeRegExp(emoteName)}\\b`, 'g');
+      
+      // Use Unicode-aware patterns for better foreign emote support
+      const patterns = [
+        new RegExp(`(?<=^|\\s)${escapeRegExp(emoteName)}(?=\\s|$)`, 'gu'), // Space boundaries (Unicode aware)
+        new RegExp(`\\b${escapeRegExp(emoteName)}\\b`, 'g'), // Traditional word boundaries
+        new RegExp(escapeRegExp(emoteName), 'g') // Fallback: exact match
+      ];
       
       console.log(`🔎 Looking for "${emoteName}" in text`);
-      if (regex.test(html)) {
-        console.log(`✅ Found "${emoteName}" - replacing with image`);
-      } else {
-        console.log(`❌ "${emoteName}" not found in text`);
+      
+      let foundMatch = false;
+      for (const regex of patterns) {
+        if (regex.test(html)) {
+          console.log(`✅ Found "${emoteName}" - replacing with image`);
+          
+          // Add animated class for animated emotes
+          const animatedClass = emote.animated ? ' emote-animated' : '';
+          const replacement = `<img src="${escapeHtml(emote.url)}" alt="${escapeHtml(emoteName)}" class="chat-emote emote-${escapeHtml(emote.provider)}${animatedClass}" title="${escapeHtml(emoteName)} (${escapeHtml(emote.provider.toUpperCase())})" loading="lazy" onerror="this.style.display='none'">`;
+          
+          // Reset regex for replace
+          regex.lastIndex = 0;
+          html = html.replace(regex, replacement);
+          foundMatch = true;
+          break;
+        }
       }
       
-      const replacement = `<img src="${escapeHtml(emote.url)}" alt="${escapeHtml(emoteName)}" class="chat-emote emote-${escapeHtml(emote.provider)}" title="${escapeHtml(emoteName)} (${escapeHtml(emote.provider.toUpperCase())})" loading="lazy" onerror="this.style.display='none'">`;
-      
-      html = html.replace(regex, replacement);
+      if (!foundMatch) {
+        console.log(`❌ "${emoteName}" not found in text`);
+      }
     });
     
     console.log(`🎭 Final HTML: "${html}"`);
