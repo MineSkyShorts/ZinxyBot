@@ -35,7 +35,7 @@
     </nav>
     <div class="user">
       <div class="status ok" title="Connected"></div>
-      <div class="admin-crown admin-feature" id="adminCrown" title="Admin User">
+      <div class="admin-crown admin-feature" id="adminCrown" title="Admin">
         <i data-lucide="crown" aria-hidden="true"></i>
       </div>
       <img class="avatar" src="assets/avatar.svg" alt="avatar" />
@@ -125,7 +125,7 @@
             Keyword
           </label>
           <input id="keywordInput" type="text" placeholder="!join" value="!join" 
-                 aria-describedby="keyword-help" maxlength="50" pattern="^![a-zA-Z0-9_-]+$" />
+                 aria-describedby="keyword-help" maxlength="50" pattern="^![a-zA-Z0-9_\-]+$" />
           <div id="keyword-help" class="validation-message">
             Must start with ! and contain only letters, numbers, _ or -
           </div>
@@ -184,7 +184,7 @@
                  placeholder="Search participants..." 
                  aria-label="Search participants" />
           <i data-lucide="search" aria-hidden="true"></i>
-          <button id="testParticipantsBtn" class="btn btn--ghost btn--xs test-participants-btn admin-feature" title="Add 20 test participants (only when giveaway is active)" type="button" disabled>
+          <button id="testParticipantsBtn" class="btn btn--ghost btn--xs test-participants-btn admin-feature" title="Add one test participant (only when giveaway is active)" type="button" disabled>
             <i data-lucide="users-round" aria-hidden="true"></i>
           </button>
         </div>
@@ -209,8 +209,8 @@
       <section class="card" role="region" aria-labelledby="chat-heading">
         <h3 id="chat-heading">
           <i data-lucide="message-circle" aria-hidden="true"></i>
-          Live Chat
-          <button id="refreshChatBtn" class="btn btn--ghost btn--xs refresh-chat-btn" title="Refresh live chat">
+          Stream Chat
+          <button id="refreshChatBtn" class="btn btn--ghost btn--xs refresh-chat-btn" title="Refresh Chat">
             <i data-lucide="rotate-cw" aria-hidden="true"></i>
           </button>
         </h3>
@@ -339,7 +339,7 @@
           <label class="switch">
             <input id="settingsAutoJoinHost" type="checkbox">
             <span class="slider"></span>
-            <span class="switch-label">Auto-join host to giveaways</span>
+            <span class="switch-label">Auto-Join Giveaway</span>
           </label>
           <label class="switch">
             <input id="antispam" type="checkbox" checked>
