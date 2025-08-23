@@ -68,6 +68,9 @@ let bttvEmotes = new Map();
 let ffzEmotes = new Map();
 let seventvEmotes = new Map();
 
+// Flag to ensure emotes are initialized only once
+let emotesInitialized = false;
+
 // Emote cache to prevent repeated API calls
 const emoteCache = {
   lastUpdated: {
@@ -963,62 +966,102 @@ function getBadgeTitle(badgeName, badgeVersion, badgeInfoString = '') {
 }
 
 // ===================== EMOTE PARSER =====================
-function parseEmotesExtended(text, twitchEmotes = null, userId = null, messageSenderId = null, accessToken = null) {
-  if (!text) return text;
-  
-  let result = text;
-  
-  if (twitchEmotes) {
-    result = parseNativeTwitchEmotes(result, twitchEmotes);
+async function ensureEmotesLoaded(accessToken = null) {
+  if (!emotesInitialized) {
+    try {
+      console.log('🎭 Loading emotes for first time...');
+      
+      const loadPromises = [
+        loadBTTVEmotes(null),
+        loadFFZEmotes(null), 
+        load7TVEmotes(null)
+      ];
+      
+      // Load global Twitch emotes if we have an access token
+      if (accessToken) {
+        loadPromises.push(loadGlobalEmotes(accessToken));
+      }
+      
+      await Promise.allSettled(loadPromises);
+      emotesInitialized = true;
+      
+      console.log(`✅ Emotes initialized - Global: ${globalEmotes.size}, BTTV: ${bttvEmotes.size}, FFZ: ${ffzEmotes.size}, 7TV: ${seventvEmotes.size}`);
+    } catch (error) {
+      console.error('❌ Failed to load emotes:', error.message);
+    }
+  } else if (accessToken && globalEmotes.size === 0) {
+    // If emotes are initialized but we don't have global Twitch emotes yet, load them
+    try {
+      console.log('🔄 Loading global Twitch emotes...');
+      await loadGlobalEmotes(accessToken);
+      console.log(`✅ Global Twitch emotes loaded: ${globalEmotes.size}`);
+    } catch (error) {
+      console.error('❌ Failed to load global Twitch emotes:', error.message);
+    }
   }
-  
-  result = parseTextEmotes(result);
-  result = parseWordEmotes(result, globalEmotes, 'twitch');
-  
-  if (userId) {
-    const userSession = getUserSession(userId);
-    result = parseWordEmotes(result, userSession.channelEmotes, 'twitch');
-  }
-  
-  result = parseWordEmotes(result, bttvEmotes, 'bttv');
-  result = parseWordEmotes(result, ffzEmotes, 'ffz');
-  result = parseWordEmotes(result, seventvEmotes, '7tv');
-  
-  return result;
 }
 
-async function parseEmotesExtendedAsync(text, twitchEmotes = null, userId = null, messageSenderId = null, accessToken = null) {
-  if (!text) return text;
+function parseEmotesExtended(text, twitchEmotes = null, userId = null, messageSenderId = null, accessToken = null) {
+  // DEPRECATED: This function now just returns plain text
+  // Emotes are handled by collectEmoteData() and rendered on frontend
+  return text || '';
+}
+
+// New function to collect emote data for frontend rendering
+async function collectEmoteData(text, twitchEmotes = null, userId = null, messageSenderId = null, accessToken = null) {
+  if (!text) return { text, emotes: [] };
   
-  let result = text;
+  await ensureEmotesLoaded(accessToken);
   
-  if (twitchEmotes) {
-    result = parseNativeTwitchEmotes(result, twitchEmotes);
+  const emoteData = [];
+  
+  // Helper function to find emotes in text and add to emoteData array
+  function findEmotesInText(text, emoteMap, provider) {
+    for (const [emoteName, emote] of emoteMap.entries()) {
+      const regex = new RegExp(`\\b${escapeRegExp(emoteName)}\\b`, 'g');
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        emoteData.push({
+          name: emoteName,
+          url: emote.url,
+          url_2x: emote.url_2x || emote.url,
+          provider: provider,
+          start: match.index,
+          end: match.index + emoteName.length
+        });
+      }
+    }
   }
   
-  result = parseTextEmotes(result);
-  result = parseWordEmotes(result, globalEmotes, 'twitch');
+  // Find all emotes
+  findEmotesInText(text, globalEmotes, 'twitch');
   
   if (userId) {
     const userSession = getUserSession(userId);
-    result = parseWordEmotes(result, userSession.channelEmotes, 'twitch');
+    findEmotesInText(text, userSession.channelEmotes, 'twitch');
   }
   
-  // Load individual user emotes for better emote recognition
+  findEmotesInText(text, bttvEmotes, 'bttv');
+  findEmotesInText(text, ffzEmotes, 'ffz');
+  findEmotesInText(text, seventvEmotes, '7tv');
+  
+  // Load individual user emotes
   if (messageSenderId && accessToken && messageSenderId !== userId) {
     try {
       const userEmotes = await UserEmoteManager.getUserEmotes(messageSenderId, accessToken, userId);
-      result = parseWordEmotes(result, userEmotes, 'twitch-sender');
+      findEmotesInText(text, userEmotes, 'twitch-sender');
     } catch (error) {
       console.error(`Failed to load sender emotes for ${messageSenderId}:`, error.message);
     }
   }
   
-  result = parseWordEmotes(result, bttvEmotes, 'bttv');
-  result = parseWordEmotes(result, ffzEmotes, 'ffz');
-  result = parseWordEmotes(result, seventvEmotes, '7tv');
-  
-  return result;
+  return { text, emotes: emoteData };
+}
+
+async function parseEmotesExtendedAsync(text, twitchEmotes = null, userId = null, messageSenderId = null, accessToken = null) {
+  // DEPRECATED: This function now just returns plain text
+  // Emotes are handled by collectEmoteData() and rendered on frontend
+  return text || '';
 }
 
 function parseNativeTwitchEmotes(text, emotes) {
@@ -1130,6 +1173,15 @@ function parseWordEmotes(text, emoteMap, provider) {
   
   console.log(`🔍 Parsing ${provider} emotes in: "${text}"`);
   console.log(`📝 Available ${provider} emotes:`, Array.from(emoteMap.keys()).slice(0, 10)); // Show first 10
+  
+  // Special debug for TwitchConHYPE
+  if (text.includes('TwitchConHYPE')) {
+    console.log(`🐛 DEBUG: Looking for TwitchConHYPE in ${provider}`);
+    console.log(`🐛 Has TwitchConHYPE:`, emoteMap.has('TwitchConHYPE'));
+    if (emoteMap.has('TwitchConHYPE')) {
+      console.log(`🐛 TwitchConHYPE data:`, emoteMap.get('TwitchConHYPE'));
+    }
+  }
   
   for (const [emoteName, emoteData] of emoteMap.entries()) {
     // Try both word boundary and simple matching
@@ -1730,8 +1782,8 @@ async function ensureTmiClient(sessionData, userId) {
     console.log(`💬 Processing message from ${tags['display-name'] || tags['username']}: "${message}"`);
     console.log(`🎭 Available emotes - Global: ${globalEmotes.size}, Channel: ${userSession.channelEmotes.size}, BTTV: ${bttvEmotes.size}, FFZ: ${ffzEmotes.size}, 7TV: ${seventvEmotes.size}`);
     
-    // Use async emote parsing to include sender's individual emotes
-    const parsedMessage = await parseEmotesExtendedAsync(
+    // Collect emote data for frontend rendering
+    const messageData = await collectEmoteData(
       message, 
       tags.emotes, 
       userId, 
@@ -1754,8 +1806,9 @@ async function ensureTmiClient(sessionData, userId) {
       channel,
       user: tags['display-name'] || tags['username'],
       userId: tags['user-id'],
-      text: message,
-      message: parsedMessage,
+      text: messageData.text,
+      message: messageData.text, // Plain text for display
+      emotes: messageData.emotes, // Emote data for frontend rendering
       color: tags.color || '#a78bfa',
       badges: badges,
       luck: luck,
@@ -2531,36 +2584,90 @@ app.post('/api/chat/send', async (req, res) => {
     let userBadges = '';
     let userBadgeInfo = '';
     
-    // Check if we have cached badge data from the user's last TMI message
+    // Try to get badges from cache first, otherwise load basic ones
     const userBadgeCache = global.userBadgeCache = global.userBadgeCache || new Map();
     const cachedBadges = userBadgeCache.get(currentUser.id);
     
-    console.log(`🔍 Website message badge lookup for ${currentUser.login} (ID: ${currentUser.id}):`);
-    console.log(`  - Cache exists:`, !!cachedBadges);
-    console.log(`  - Cached data:`, cachedBadges);
+    console.log(`🔍 Website message badge lookup for ${currentUser.login} (ID: ${currentUser.id})`);
     
     if (cachedBadges) {
       console.log(`📋 Using cached badges for ${currentUser.login}:`);
-      console.log(`  - badges: "${cachedBadges.badges}"`);
-      console.log(`  - badge-info: "${cachedBadges.badgeInfo}"`);
-      
       userBadges = cachedBadges.badges || '';
       userBadgeInfo = cachedBadges.badgeInfo || '';
-      
-      // If user is also broadcaster but cached badges don't include it, add it
-      if (ch === currentUser.login.toLowerCase() && !userBadges.includes('broadcaster')) {
-        userBadges = userBadges ? `broadcaster/1,${userBadges}` : 'broadcaster/1';
-        console.log(`👑 Added broadcaster badge to cached badges: "${userBadges}"`);
-      }
+      console.log(`  - badges: "${userBadges}"`);
+      console.log(`  - badge-info: "${userBadgeInfo}"`);
     } else {
-      // If no cached badges, at least set broadcaster badge if applicable
+      console.log(`⚠️ No cached badges found for ${currentUser.login}`);
+      
+      // Load basic badges that we can determine
+      const badges = [];
+      const badgeInfo = [];
+      
+      // Always add broadcaster badge if this is their own channel
       if (ch === currentUser.login.toLowerCase()) {
-        userBadges = 'broadcaster/1';
-        userBadgeInfo = '';
-        console.log(`👑 Setting broadcaster badge for ${currentUser.login}`);
+        badges.push('broadcaster/1');
+        console.log(`👑 Added broadcaster badge for ${currentUser.login}`);
       }
       
-      console.log(`⚠️ No cached badges found for ${currentUser.login}, using minimal badges: "${userBadges}"`);
+      // Try to load additional badges via API
+      try {
+        // Check if user is a moderator in the current channel
+        if (ch !== currentUser.login.toLowerCase()) {
+          try {
+            const modResponse = await axios.get(`${TWITCH_API}/moderation/moderators`, {
+              headers: {
+                'Client-Id': process.env.TWITCH_CLIENT_ID,
+                'Authorization': `Bearer ${req.session.twitch.access_token}`
+              },
+              params: { 
+                broadcaster_id: userSession.giveaway.channelId || currentUser.id,
+                user_id: currentUser.id
+              }
+            });
+            
+            if (modResponse.data.data && modResponse.data.data.length > 0) {
+              badges.push('moderator/1');
+              console.log(`🛡️ Added moderator badge for ${currentUser.login}`);
+            }
+          } catch (modError) {
+            console.log(`ℹ️ Could not check moderator status: ${modError.response?.status || modError.message}`);
+          }
+          
+          // Check if user is a VIP in the current channel
+          try {
+            const vipResponse = await axios.get(`${TWITCH_API}/channels/vips`, {
+              headers: {
+                'Client-Id': process.env.TWITCH_CLIENT_ID,
+                'Authorization': `Bearer ${req.session.twitch.access_token}`
+              },
+              params: { 
+                broadcaster_id: userSession.giveaway.channelId || currentUser.id,
+                user_id: currentUser.id
+              }
+            });
+            
+            if (vipResponse.data.data && vipResponse.data.data.length > 0) {
+              badges.push('vip/1');
+              console.log(`⭐ Added VIP badge for ${currentUser.login}`);
+            }
+          } catch (vipError) {
+            console.log(`ℹ️ Could not check VIP status: ${vipError.response?.status || vipError.message}`);
+          }
+        }
+      } catch (apiError) {
+        console.log(`⚠️ Could not load additional badges: ${apiError.message}`);
+      }
+      
+      userBadges = badges.join(',');
+      userBadgeInfo = badgeInfo.join(',');
+      
+      console.log(`✅ Set basic badges for ${currentUser.login}: "${userBadges}"`);
+    }
+    
+    // Ensure broadcaster badge is included if needed
+    if (ch === currentUser.login.toLowerCase() && !userBadges.includes('broadcaster')) {
+      userBadges = userBadges ? `broadcaster/1,${userBadges}` : 'broadcaster/1';
+      console.log(`👑 Added missing broadcaster badge: "${userBadges}"`);
     }
     
     console.log(`🎭 Final badges for website message: "${userBadges}" | badge-info: "${userBadgeInfo}"`);
@@ -2600,8 +2707,8 @@ app.post('/api/chat/send', async (req, res) => {
     console.log(`💬 Processing website message from ${currentUser.display_name || currentUser.login}: "${text}"`);
     console.log(`🎭 Available emotes - Global: ${globalEmotes.size}, Channel: ${userSession.channelEmotes.size}, BTTV: ${bttvEmotes.size}, FFZ: ${ffzEmotes.size}, 7TV: ${seventvEmotes.size}`);
     
-    // For website messages, use the current user's own emotes
-    const parsedMessage = await parseEmotesExtendedAsync(
+    // For website messages, collect emote data for frontend rendering
+    const messageData = await collectEmoteData(
       text, 
       null, 
       userId,
@@ -2613,8 +2720,9 @@ app.post('/api/chat/send', async (req, res) => {
       channel: ch,
       user: simulatedTags['display-name'],
       userId: simulatedTags['user-id'],
-      text: text,
-      message: parsedMessage,
+      text: messageData.text,
+      message: messageData.text, // Plain text for display
+      emotes: messageData.emotes, // Emote data for frontend rendering
       color: simulatedTags.color,
       badges: badges,
       luck: luck,
@@ -2786,9 +2894,10 @@ io.on('connection', (socket) => {
   });
 });
 
+
 // ===================== SERVER START =====================
 const port = process.env.PORT || 3000;
-server.listen(port, () => {
+server.listen(port, async () => {
   console.log(`ðŸ† ZinxyBot server running on http://localhost:${port}`);
   console.log('ðŸŽ¯ Ready for user-specific giveaways with FIXED luck multipliers!');
   console.log('âœ… Each user now has their own isolated session and data');
