@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ZinxyBot Dashboard - Enhanced</title>
+  <title>ZinxyBot - Dashboard</title>
   
   <!-- Favicon aus brand.png -->
   <link rel="icon" type="image/png" href="/assets/favicon.png">
@@ -17,7 +17,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">
+    <div class="brand" id="brandLogo" style="cursor: pointer;" title="Go to Giveaways">
       <div class="icon icon--blue">
         <img src="/assets/brand.png" alt="ZinxyBot logo" />
       </div>
@@ -210,8 +210,8 @@
         <h3 id="chat-heading">
           <i data-lucide="message-circle" aria-hidden="true"></i>
           Stream Chat
-          <button id="refreshChatBtn" class="btn btn--ghost btn--xs refresh-chat-btn" title="Refresh Chat">
-            <i data-lucide="rotate-cw" aria-hidden="true"></i>
+          <button id="refreshChatBtn" class="btn btn--ghost btn--xs refresh-chat-btn" title="Clear Chat">
+            <i data-lucide="trash-2" aria-hidden="true"></i>
           </button>
         </h3>
         <div class="chat" id="chatList" role="log" aria-live="polite" aria-label="Live chat messages">
@@ -652,6 +652,34 @@
       height: 18px;
       color: #ffd700;
       filter: drop-shadow(0 1px 2px rgba(255, 215, 0, 0.4));
+    }
+    
+    /* Increased spacing between stream chat and footer */
+    .rightbar {
+      margin-bottom: 2rem;
+    }
+    
+    /* Additional spacing for the main content area */
+    main {
+      margin-bottom: 1.5rem;
+    }
+    
+    /* Brand logo hover effect */
+    .brand {
+      transition: opacity 0.2s ease, transform 0.1s ease;
+      border-radius: 6px;
+      padding: 4px;
+      margin: -4px;
+    }
+    
+    .brand:hover {
+      opacity: 0.8;
+      transform: translateY(-1px);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    
+    .brand:active {
+      transform: translateY(0);
     }
   </style>
 </body>
