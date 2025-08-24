@@ -1461,6 +1461,40 @@ async function getUserInfo(userId, login, accessToken) {
   }
 }
 
+async function getUserFollowInfo(userId, broadcasterId, accessToken) {
+  try {
+    const followInfo = {
+      isFollowing: false,
+      followedAt: null
+    };
+    
+    // Get follow relationship using Twitch API
+    const followResponse = await axios.get(`${TWITCH_API}/channels/followers`, {
+      headers: {
+        'Client-Id': process.env.TWITCH_CLIENT_ID,
+        'Authorization': `Bearer ${accessToken}`
+      },
+      params: { 
+        broadcaster_id: broadcasterId,
+        user_id: userId
+      }
+    });
+    
+    if (followResponse.data.data && followResponse.data.data.length > 0) {
+      followInfo.isFollowing = true;
+      followInfo.followedAt = followResponse.data.data[0].followed_at;
+    }
+    
+    return followInfo;
+  } catch (error) {
+    console.error('Failed to get follow info:', error.message);
+    return {
+      isFollowing: false,
+      followedAt: null
+    };
+  }
+}
+
 // ===================== GIVEAWAY MANAGER - BENUTZERSPEZIFISCH =====================
 class GiveawayManager {
   constructor() {
@@ -2026,6 +2060,22 @@ app.get('/api/user-info/:userId', async (req, res) => {
   } catch (e) {
     console.error('âŒ User info API error:', e);
     res.status(500).json({ error: 'Failed to get user info' });
+  }
+});
+
+app.get('/api/user-follow/:userId', async (req, res) => {
+  try {
+    if (!req.session?.user || !req.session?.twitch?.access_token) {
+      return res.status(401).json({ error: 'Not logged in' });
+    }
+    
+    const userId = req.params.userId;
+    const followInfo = await getUserFollowInfo(userId, req.session.user.id, req.session.twitch.access_token);
+    
+    res.json(followInfo);
+  } catch (e) {
+    console.error('❌ User follow API error:', e);
+    res.status(500).json({ error: 'Failed to get follow info' });
   }
 });
 
