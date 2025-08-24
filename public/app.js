@@ -71,7 +71,8 @@ const AdminSystem = {
 };
 
 // Function to load user badges and luck multiplier
-async function loadUserBadges(user) {
+// This function will be called after AppState is initialized
+async function loadUserBadges(user, appState) {
   try {
     console.log('🏷️ Lade Badges für Benutzer:', user.login);
     
@@ -80,9 +81,9 @@ async function loadUserBadges(user) {
     if (response.ok) {
       const badgeData = await response.json();
       if (badgeData.badges) {
-        AppState.userBadges = badgeData.badges;
-        AppState.userLuck = badgeData.luck || 1.0;
-        console.log('✅ Badges geladen:', AppState.userBadges.length, 'Badges, Luck:', AppState.userLuck);
+        appState.userBadges = badgeData.badges;
+        appState.userLuck = badgeData.luck || 1.0;
+        console.log('✅ Badges geladen:', appState.userBadges.length, 'Badges, Luck:', appState.userLuck);
         return;
       }
     }
@@ -94,7 +95,7 @@ async function loadUserBadges(user) {
       
       // Zusätzlicher Fallback: Sende eine unsichtbare Nachricht um Badge-Trigger auszulösen
       setTimeout(() => {
-        if (AppState.userBadges.length === 0) {
+        if (appState.userBadges.length === 0) {
           console.log('🔄 Sende Badge-Trigger-Nachricht...');
           // Diese Nachricht wird nicht im Chat angezeigt, aber Badge-Informationen triggern
           socket.emit('chat:get-badges', { userId: user.id, trigger: true });
@@ -508,16 +509,6 @@ const Validators = {
           break;
       }
       
-      // Update test participants button state
-      const testParticipantsBtn = document.getElementById('testParticipantsBtn');
-      if (testParticipantsBtn) {
-        const isActive = AppState.giveaway.status === 'ACTIVE';
-        testParticipantsBtn.disabled = !isActive;
-        testParticipantsBtn.style.opacity = isActive ? '0.8' : '0.4';
-        testParticipantsBtn.title = isActive 
-          ? 'Test-Teilnehmer hinzufügen (20 Stück)'
-          : 'Test-Teilnehmer können nur bei aktivem Giveaway hinzugefügt werden';
-      }
       
       lucide.createIcons();
     },
@@ -570,7 +561,7 @@ const Validators = {
     },
     
     updateKeywordDisplay() {
-      if (elements.kwTag) elements.kwTag.textContent = AppState.giveaway.keyword;
+      if (elements.kwTag) elements.kwTag.textContent = AppState.giveaway.keyword.replace(/\n/g, ' ');
       if (elements.keywordInput) elements.keywordInput.value = AppState.giveaway.keyword;
     }
   };
@@ -1037,7 +1028,23 @@ validateAndUpdateKeyword(keyword) {
     try {
       const response = await fetch(`/api/user-info/${userId}?login=${login}`);
       if (response.ok) {
-        return await response.json();
+        const userInfo = await response.json();
+        
+        // Load follower information separately
+        try {
+          const followResponse = await fetch(`/api/user-follow/${userId}`);
+          if (followResponse.ok) {
+            const followData = await followResponse.json();
+            userInfo.followInfo = followData;
+          } else {
+            userInfo.followInfo = null;
+          }
+        } catch (followError) {
+          console.warn('Fehler beim Laden der Follower-Info:', followError);
+          userInfo.followInfo = null;
+        }
+        
+        return userInfo;
       }
     } catch (e) {
       console.error('Fehler beim Laden der Benutzer-Info:', e);
@@ -1088,6 +1095,37 @@ validateAndUpdateKeyword(keyword) {
   }
 
   // Enhanced Event Handlers
+  // Utility function for API calls with retry logic
+  async function makeAuthenticatedRequest(url, options = {}, maxRetries = 2) {
+    let retryCount = 0;
+    
+    do {
+      const response = await fetch(url, options);
+      
+      if (response.status === 401) {
+        console.warn(`Authentifizierungsfehler bei ${url} (Versuch ${retryCount + 1}/${maxRetries + 1})`);
+        
+        if (retryCount < maxRetries) {
+          // Re-authenticate user before retry
+          if (AppState.user && AppState.user.id) {
+            localSafeSocketEmit('auth', AppState.user.id);
+            console.log('Socket neu authentifiziert für Retry...');
+          }
+          
+          // Wait a bit before retry
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          retryCount++;
+          continue;
+        } else {
+          throw new Error('Authentication failed after multiple attempts. Please refresh the page.');
+        }
+      }
+      
+      return response; // Return the response for further processing
+      
+    } while (retryCount <= maxRetries);
+  }
+
   const EventHandlers = {
     async startGiveaway() {
   if (AppState.ui.isStarting || AppState.giveaway.status === 'ACTIVE') {
@@ -1113,7 +1151,8 @@ validateAndUpdateKeyword(keyword) {
 // ✅ KORRIGIERT: Verwende aktuelle Settings für autoJoinHost
 const currentAutoJoin = SettingsManager.currentSettings.general.autoJoinHost || false;
 
-const res = await fetch('/api/giveaway/start', {
+// Try to start giveaway with retry logic for authentication issues
+const res = await makeAuthenticatedRequest('/api/giveaway/start', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -1123,6 +1162,11 @@ const res = await fetch('/api/giveaway/start', {
     autoJoinHost: currentAutoJoin
   })
 });
+
+if (!res.ok) {
+  const errorData = await res.json().catch(() => ({}));
+  throw new Error(`Server error (${res.status}): ${errorData.error || 'Unknown error'}`);
+}
         
         if (res.ok) {
           AppState.giveaway.keyword = settings.keyword;
@@ -1133,8 +1177,6 @@ const res = await fetch('/api/giveaway/start', {
           
           StateManager.updateStatus('ACTIVE', { durationSeconds: settings.durationSeconds });
           UIManager.showToast('Giveaway started successfully!');
-        } else {
-          throw new Error('Failed to start giveaway');
         }
       } catch (e) {
         console.error('Fehler beim Starten:', e);
@@ -1164,7 +1206,8 @@ const res = await fetch('/api/giveaway/start', {
         
         console.group(`🎮 ${actionName}`);
         console.log(`Versuche Giveaway zu ${actionName}... Status:`, AppState.giveaway.status);
-        const res = await fetch(endpoint, { 
+        
+        const res = await makeAuthenticatedRequest(endpoint, { 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -1205,7 +1248,7 @@ const res = await fetch('/api/giveaway/start', {
         console.group('🏆 Gewinner-Auswahl');
         console.log(`Wähle Gewinner aus ${AppState.giveaway.entries} Teilnehmern`);
         
-        const res = await fetch('/api/giveaway/end', { 
+        const res = await makeAuthenticatedRequest('/api/giveaway/end', { 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });
@@ -1260,7 +1303,7 @@ const res = await fetch('/api/giveaway/start', {
       try {
         TimerManager.stop();
         
-        const res = await fetch('/api/giveaway/stop', { method: 'POST' });
+        const res = await makeAuthenticatedRequest('/api/giveaway/stop', { method: 'POST' });
         if (res.ok) {
           StateManager.updateStatus('INACTIVE');
           
@@ -1273,6 +1316,9 @@ const res = await fetch('/api/giveaway/start', {
           UIManager.showToast('Giveaway reset successfully');
           console.log('Giveaway zurückgesetzt');
           console.groupEnd();
+        } else {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(`Server error (${res.status}): ${errorData.error || 'Unknown error'}`);
         }
       } catch (e) {
         console.error('Reset fehlgeschlagen:', e);
@@ -1434,8 +1480,8 @@ const res = await fetch('/api/giveaway/start', {
         const userInfo = await loadUserInfo(winner.userId, winner.login);
         
         if (userInfo) {
+          // Account creation date
           const createdAtEl = document.getElementById('winnerCreatedAt');
-          
           if (createdAtEl) {
             if (userInfo.createdAt) {
               createdAtEl.textContent = formatDate(userInfo.createdAt);
@@ -1443,18 +1489,55 @@ const res = await fetch('/api/giveaway/start', {
               createdAtEl.textContent = 'Unknown';
             }
           }
+          
+          // Follower information
+          const followStatusEl = document.getElementById('winnerFollowStatus');
+          const followDateEl = document.getElementById('winnerFollowDate');
+          const followDateValueEl = document.getElementById('winnerFollowDateValue');
+          
+          if (followStatusEl) {
+            if (userInfo.followInfo && userInfo.followInfo.isFollowing) {
+              followStatusEl.textContent = '✓ Following';
+              followStatusEl.style.color = 'var(--success)';
+              
+              if (followDateEl && followDateValueEl && userInfo.followInfo.followedAt) {
+                followDateValueEl.textContent = formatDate(userInfo.followInfo.followedAt);
+                followDateEl.style.display = 'block';
+              }
+            } else if (userInfo.followInfo && userInfo.followInfo.isFollowing === false) {
+              followStatusEl.textContent = 'Not following';
+              followStatusEl.style.color = 'var(--error)';
+              if (followDateEl) followDateEl.style.display = 'none';
+            } else {
+              followStatusEl.textContent = 'Unable to load';
+              followStatusEl.style.color = 'var(--text-muted)';
+              if (followDateEl) followDateEl.style.display = 'none';
+            }
+          }
         } else {
           const createdAtEl = document.getElementById('winnerCreatedAt');
-          if (createdAtEl) {
-            createdAtEl.textContent = 'Unable to load';
+          const followStatusEl = document.getElementById('winnerFollowStatus');
+          const followDateEl = document.getElementById('winnerFollowDate');
+          
+          if (createdAtEl) createdAtEl.textContent = 'Unable to load';
+          if (followStatusEl) {
+            followStatusEl.textContent = 'Unable to load';
+            followStatusEl.style.color = 'var(--text-muted)';
           }
+          if (followDateEl) followDateEl.style.display = 'none';
         }
       } catch (e) {
         console.error('Fehler beim Laden der Benutzer-Info:', e);
         const createdAtEl = document.getElementById('winnerCreatedAt');
-        if (createdAtEl) {
-          createdAtEl.textContent = 'Error loading data';
+        const followStatusEl = document.getElementById('winnerFollowStatus');
+        const followDateEl = document.getElementById('winnerFollowDate');
+        
+        if (createdAtEl) createdAtEl.textContent = 'Error loading data';
+        if (followStatusEl) {
+          followStatusEl.textContent = 'Error loading data';
+          followStatusEl.style.color = 'var(--text-muted)';
         }
+        if (followDateEl) followDateEl.style.display = 'none';
       }
     }
 
@@ -1893,7 +1976,7 @@ const res = await fetch('/api/giveaway/start', {
   });
   
   elements.pauseBtn?.addEventListener('click', EventHandlers.pauseResumeGiveaway);
-  elements.pickBtn?.addEventListener('click', EventHandlers.pickWinner);
+  elements.pickBtn?.addEventListener('click', pickRandomWinnerFromUI);
   elements.resetBtn?.addEventListener('click', EventHandlers.showResetConfirmation);
   
   document.getElementById('confirmReset')?.addEventListener('click', EventHandlers.confirmReset);
@@ -1938,8 +2021,12 @@ const res = await fetch('/api/giveaway/start', {
         header.avatar.alt = (me.displayName || me.login || 'avatar') + ' avatar';
       }
       
-      // Lade Badge-Informationen des aktuellen Benutzers
-      await loadUserBadges(me);
+      // Lade Badge-Informationen des aktuellen Benutzers (nach AppState init)
+      setTimeout(() => {
+        loadUserBadges(me, AppState).catch(error => {
+          console.warn('Badge-Laden fehlgeschlagen:', error);
+        });
+      }, 100); // Kurze Verzögerung um sicherzustellen, dass AppState vollständig initialisiert ist
       
       // Nach dem Laden des Benutzers authentifiziere den Socket
       const success = localSafeSocketEmit('auth', AppState.user.id);
@@ -1993,7 +2080,17 @@ StateManager.updateEntriesDisplay();
     StateManager.updateEntriesDisplay();
     StateManager.updateButtonStates();
     
+    // WICHTIG: Update participant count to fix "No Participants Yet" display
+    updateParticipantCount();
+    
+    // Initialize Lucide icons for loaded participants
+    if (elements.participantsList) {
+      lucide.createIcons(elements.participantsList);
+    }
+    
     setTimeout(() => checkScrollbar(), 100);
+    
+    console.log('📊 Initial participants loaded:', AppState.giveaway.entries);
   } catch (e) {
     console.error('Fehler beim Laden der Teilnehmer:', e);
   }
@@ -2061,6 +2158,72 @@ StateManager.updateEntriesDisplay();
   // HELPER FUNCTIONS
   function showToast(message, type = 'success') {
     UIManager.showToast(message, type);
+  }
+  
+  // Global winner selection function that works with test participants
+  function pickRandomWinnerFromUI() {
+    const participants = Array.from(elements.participantsList?.querySelectorAll('.participant-row') || []);
+    
+    if (participants.length === 0) {
+      UIManager.showToast('No participants to pick from!', 'error');
+      return;
+    }
+    
+    // Filter out bot participants for winner selection
+    const realParticipants = participants.filter(row => {
+      const username = row.getAttribute('data-login') || 
+                     row.querySelector('[data-remove]')?.getAttribute('data-remove') || '';
+      return !username.startsWith('Bot_');
+    });
+    
+    if (realParticipants.length === 0) {
+      UIManager.showToast('No real participants to pick from (only bots)!', 'error');
+      return;
+    }
+    
+    // Pick random winner considering luck multipliers
+    const winners = [];
+    realParticipants.forEach(row => {
+      const username = row.getAttribute('data-login') || 
+                      row.querySelector('[data-remove]')?.getAttribute('data-remove') || '';
+      const luckText = row.querySelector('.participant-luck')?.textContent || '1.0x';
+      const luck = parseFloat(luckText.replace('x', '')) || 1.0;
+      
+      // Add multiple entries based on luck multiplier
+      const entries = Math.max(1, Math.floor(luck * 10)); // Convert luck to entries
+      for (let i = 0; i < entries; i++) {
+        winners.push({
+          element: row,
+          username: username,
+          luck: luck
+        });
+      }
+    });
+    
+    // Pick random winner
+    const randomIndex = Math.floor(Math.random() * winners.length);
+    const selectedWinner = winners[randomIndex];
+    
+    // Create winner object
+    const winner = {
+      login: selectedWinner.username,
+      display_name: selectedWinner.username,
+      profileImageUrl: selectedWinner.element.querySelector('.participant-avatar')?.src || null,
+      luck: selectedWinner.luck,
+      userId: selectedWinner.element.getAttribute('data-user-id') || null
+    };
+    
+    // Show winner modal
+    showWinnerModal(winner);
+    StateManager.updateStatus('INACTIVE');
+    
+    // Clear participants list after winner selection
+    setTimeout(() => {
+      clearAllParticipantsIncludingTestAndBots();
+    }, 1000); // Wait 1 second so user can see the winner
+    
+    UIManager.showToast(`Winner selected: ${selectedWinner.username}`, 'success');
+    console.log('Winner selected:', selectedWinner.username, 'Luck:', selectedWinner.luck);
   }
 
   function createConfetti() {
@@ -2147,46 +2310,59 @@ StateManager.updateEntriesDisplay();
   function clearParticipantsList() {
     if (elements.participantsList) {
       const participants = Array.from(elements.participantsList.children);
-      participants.forEach((participant, index) => {
-        setTimeout(() => {
+      
+      if (participants.length > 0) {
+        // Animate all participants out at once (same as chat clear)
+        participants.forEach((participant) => {
           participant.style.opacity = '0';
           participant.style.transform = 'translateX(-20px)';
           participant.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
-          setTimeout(() => participant.remove(), 200);
-        }, index * 50);
-      });
-      
-      setTimeout(() => {
+        });
+        
+        // Wait for animation to complete, then remove all at once
+        setTimeout(() => {
+          participants.forEach(participant => participant.remove());
+          StateManager.updateEntriesDisplay();
+          updateParticipantCount();
+          console.log('Teilnehmerliste geleert');
+        }, 200);
+      } else {
+        // No participants to animate
         StateManager.updateEntriesDisplay();
         updateParticipantCount();
         console.log('Teilnehmerliste geleert');
-      }, participants.length * 50 + 200);
+      }
     }
   }
 
   function clearParticipantsListAfterWinner() {
     if (elements.participantsList) {
       const participants = Array.from(elements.participantsList.children);
-      participants.forEach((participant, index) => {
-        setTimeout(() => {
+      if (participants.length > 0) {
+        // Animate all participants out at once (same as chat clear)
+        participants.forEach((participant) => {
           participant.style.opacity = '0';
           participant.style.transform = 'translateX(-20px)';
           participant.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
-          setTimeout(() => participant.remove(), 200);
-        }, index * 50);
-      });
-      
-      // Longer delay before showing empty message after winner
-      setTimeout(() => {
-        StateManager.updateEntriesDisplay();
-        // Don't call updateParticipantCount immediately after winner
-        console.log('Teilnehmerliste nach Gewinner geleert');
+        });
         
-        // Show empty panel after additional delay
+        // Wait for animation to complete, then remove all at once
         setTimeout(() => {
-          updateParticipantCount();
-        }, 2000);
-      }, participants.length * 50 + 200);
+          participants.forEach(participant => participant.remove());
+          StateManager.updateEntriesDisplay();
+          console.log('Teilnehmerliste nach Gewinner geleert');
+          
+          // Show empty panel after additional delay
+          setTimeout(() => {
+            updateParticipantCount();
+          }, 2000);
+        }, 200);
+      } else {
+        // No participants to animate
+        StateManager.updateEntriesDisplay();
+        console.log('Teilnehmerliste nach Gewinner geleert');
+        updateParticipantCount();
+      }
     }
   }
 
@@ -2227,7 +2403,15 @@ StateManager.updateEntriesDisplay();
   // ✅ KORRIGIERTE renderParticipant Funktion mit FIXED Luck Display
   function renderParticipant(p) {
     const login = p.login || p.name || p.user || '';
-    const display = p.displayName || p.display || login;
+    // Use proper display name or capitalize first letter of login as fallback
+    let display = p.display_name || p.displayName || p.display || login;
+    
+    // If display is same as login (lowercase), try to get proper capitalization
+    if (display === login && login.length > 0) {
+      // For real Twitch users, preserve their actual display name if available
+      // For test users, use the original name format
+      display = login.charAt(0).toUpperCase() + login.slice(1);
+    }
     const avatar = p.profileImageUrl || p.avatar || p.avatarUrl || '';
     const luck = p.luck || p.mult || 1.0;
     // ✅ KORRIGIERT: Zeige immer "X.XXx" Format, nie "No Multiplier"
@@ -2280,6 +2464,36 @@ StateManager.updateEntriesDisplay();
         console.group('🗑️ Teilnehmer entfernen');
         console.log('Versuche Teilnehmer zu entfernen:', lg);
         
+        // Check if this is a test participant or bot (client-side only)
+        const isTestParticipant = lg.includes('TestUser_') || lg.includes('TestViewer_') || 
+                                 lg.includes('DemoUser_') || lg.includes('SampleViewer_') ||
+                                 lg.includes('ExampleUser_') || lg.includes('MockViewer_') ||
+                                 lg.includes('FakeUser_') || lg.includes('TestAccount_') ||
+                                 lg.includes('DummyUser_') || lg.includes('TrialUser_');
+        const isBotParticipant = lg.startsWith('Bot_');
+        
+        if (isTestParticipant || isBotParticipant) {
+          // Remove test/bot participants directly from UI
+          console.log('Entferne Test/Bot-Teilnehmer direkt aus UI:', lg);
+          console.groupEnd();
+          
+          li.style.opacity = '0';
+          li.style.transform = 'translateX(-20px)';
+          li.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+          
+          setTimeout(() => {
+            li.remove();
+            AppState.giveaway.entries = Math.max(0, AppState.giveaway.entries - 1);
+            StateManager.updateEntriesDisplay();
+            StateManager.updateButtonStates();
+            updateParticipantCount();
+          }, 200);
+          
+          UIManager.showToast(`Removed ${isTestParticipant ? 'test participant' : 'bot'} ${lg}`, 'success');
+          return;
+        }
+        
+        // Handle real participants via server
         try {
           const res = await fetch(`/api/giveaway/participants/${encodeURIComponent(lg)}`, { 
             method: 'DELETE',
@@ -2318,8 +2532,11 @@ StateManager.updateEntriesDisplay();
   function updateParticipantCount() {
     const allParticipants = elements.participantsList ? elements.participantsList.children.length : 0;
     
+    // Force sync AppState with actual DOM count
     AppState.giveaway.entries = allParticipants;
     StateManager.updateEntriesDisplay();
+    
+    console.log('📊 Participant count updated:', allParticipants);
     
     if (elements.emptyPanel && elements.participantsList) {
       if (allParticipants === 0) {
@@ -2922,7 +3139,372 @@ StateManager.updateEntriesDisplay();
     checkMessageWrap(row);
     
     elements.chatList.scrollTop = elements.chatList.scrollHeight;
+    
+    // Check for admin commands
+    processAdminCommand(ev);
   });
+  
+  // Admin Commands System
+  function processAdminCommand(chatEvent) {
+    const msg = (chatEvent?.message ?? chatEvent?.text ?? '').toString().trim();
+    const user = chatEvent?.user || '';
+    
+    // Check if message is a command
+    if (!msg.startsWith('!')) return;
+    
+    // Debug: Log chat event structure
+    console.log('🔍 Chat Event Debug:', {
+      user: user,
+      isBroadcaster: chatEvent.isBroadcaster,
+      isMod: chatEvent.isMod,
+      badges: chatEvent.badges,
+      userInfo: chatEvent.userInfo
+    });
+    
+    // Check if user is admin (broadcaster or mod)
+    // Try multiple ways to detect admin status
+    const isAdmin = chatEvent.isBroadcaster || 
+                   chatEvent.isMod || 
+                   chatEvent.badges?.broadcaster || 
+                   chatEvent.badges?.moderator ||
+                   (chatEvent.userInfo && (chatEvent.userInfo.isBroadcaster || chatEvent.userInfo.isMod)) ||
+                   AdminSystem.isAdmin || // Fallback to local admin system
+                   isManualAdmin(user); // Manual admin list
+    
+    function isManualAdmin(username) {
+      // Add your Twitch username here for manual admin access
+      const manualAdmins = ['alexej_zinxy']; // Replace with your actual username
+      return manualAdmins.includes(username.toLowerCase());
+    }
+    
+    if (!isAdmin) {
+      console.log('❌ User is not admin:', user);
+      return;
+    }
+    
+    console.log('✅ Admin command detected from:', user);
+    
+    // Check if giveaway is active
+    if (AppState.giveaway.status !== 'ACTIVE') {
+      sendAdminFeedback(`⚠️ Commands only work during active giveaway`, 'warn');
+      return;
+    }
+    
+    const parts = msg.slice(1).split(' ');
+    const command = parts[0].toLowerCase();
+    const subcommand = parts[1]?.toLowerCase();
+    const args = parts.slice(2);
+    
+    switch (command) {
+      case 'pick':
+        handlePickCommand(subcommand, args);
+        break;
+      case 'add':
+        handleAddCommand(subcommand, args);
+        break;
+      case 'set':
+        handleSetCommand(parts.slice(1));
+        break;
+    }
+  }
+  
+  function handlePickCommand(subcommand, args) {
+    if (subcommand === 'winner') {
+      if (args.length === 0) {
+        // Random winner selection from UI participants
+        pickRandomWinnerFromUI();
+        sendAdminFeedback('Picking random winner...', 'success');
+      } else {
+        // Specific winner selection
+        const username = args[0];
+        pickSpecificWinner(username);
+      }
+    }
+  }
+  
+  function handleAddCommand(subcommand, args) {
+    const count = parseInt(args[0]) || 0;
+    if (count <= 0) {
+      sendAdminFeedback('❌ Invalid number', 'error');
+      return;
+    }
+    
+    if (subcommand === 'participants') {
+      addTestParticipants(count);
+      sendAdminFeedback(`✅ Added ${count} test participants`, 'success');
+    } else if (subcommand === 'bot') {
+      addBotParticipants(count);
+      sendAdminFeedback(`🤖 Added ${count} bot participants`, 'success');
+    }
+  }
+  
+  function handleSetCommand(args) {
+    // !set <username> luck <multiplier>
+    if (args.length < 3 || args[1] !== 'luck') {
+      sendAdminFeedback('❌ Usage: !set <username> luck <multiplier>', 'error');
+      return;
+    }
+    
+    const username = args[0];
+    const multiplier = parseFloat(args[2]);
+    
+    if (isNaN(multiplier) || multiplier <= 0) {
+      sendAdminFeedback('❌ Invalid luck multiplier', 'error');
+      return;
+    }
+    
+    setParticipantLuck(username, multiplier);
+  }
+  
+  function pickSpecificWinner(username) {
+    // Debug: Log all participants
+    const allParticipants = elements.participantsList?.querySelectorAll('.participant-row');
+    console.log('🔍 All participants:', Array.from(allParticipants || []).map(p => ({
+      dataLogin: p.getAttribute('data-login'),
+      dataRemove: p.querySelector('[data-remove]')?.getAttribute('data-remove'),
+      textContent: p.textContent.trim()
+    })));
+    
+    // Check if user is in participants list - try multiple selectors
+    let participantItem = elements.participantsList?.querySelector(`[data-login="${username}"]`) ||
+                         elements.participantsList?.querySelector(`[data-remove="${username}"]`) ||
+                         Array.from(elements.participantsList?.querySelectorAll('.participant-row') || [])
+                           .find(row => row.textContent.toLowerCase().includes(username.toLowerCase()));
+    
+    if (!participantItem) {
+      sendAdminFeedback(`❌ ${username} is not in participants list`, 'error');
+      console.log('❌ Could not find participant:', username);
+      return;
+    }
+    
+    console.log('✅ Found participant:', participantItem);
+    
+    // Create winner object similar to server response
+    const winner = {
+      login: username,
+      display_name: username,
+      profileImageUrl: participantItem.querySelector('.participant-avatar')?.src || null,
+      luck: parseFloat(participantItem.querySelector('.participant-luck')?.textContent?.replace('x', '')) || 1.0,
+      userId: participantItem.getAttribute('data-user-id') || null
+    };
+    
+    // Show winner modal directly
+    showWinnerModal(winner);
+    
+    // Update giveaway status
+    StateManager.updateStatus('INACTIVE');
+    
+    // Clear participants list after winner selection
+    setTimeout(() => {
+      clearAllParticipantsIncludingTestAndBots();
+    }, 1000); // Wait 1 second so user can see the winner
+    
+    sendAdminFeedback(`🎯 Selected ${username} as winner!`, 'success');
+    
+    console.log('🎯 Admin selected specific winner:', username);
+  }
+  
+  function addTestParticipants(count) {
+    const testNames = [
+      'TestUser', 'TestViewer', 'DemoUser', 'SampleViewer', 'ExampleUser', 
+      'MockViewer', 'FakeUser', 'TestAccount', 'DummyUser', 'TrialUser'
+    ];
+    
+    for (let i = 0; i < count; i++) {
+      const baseName = testNames[i % testNames.length];
+      const name = baseName + '_' + Math.floor(Math.random() * 10000);
+      
+      // Add participant directly to UI
+      addParticipantToUI({
+        login: name,
+        display_name: name,
+        profileImageUrl: null,
+        luck: 1.0,
+        userId: 'test_' + Math.floor(Math.random() * 100000)
+      });
+    }
+    
+    console.log(`✅ Added ${count} test participants to UI`);
+  }
+  
+  function addBotParticipants(count) {
+    for (let i = 0; i < count; i++) {
+      const name = 'Bot_' + Math.floor(Math.random() * 10000);
+      
+      // Add bot participant directly to UI
+      addParticipantToUI({
+        login: name,
+        display_name: name,
+        profileImageUrl: null,
+        luck: 0.5, // Bots have lower luck
+        userId: 'bot_' + Math.floor(Math.random() * 100000),
+        isBot: true
+      });
+    }
+    
+    console.log(`🤖 Added ${count} bot participants to UI`);
+  }
+  
+  // Helper function for animated participant addition
+  function addParticipantWithAnimation(participant) {
+    if (!elements.participantsList) return null;
+    
+    const participantElement = renderParticipant(participant);
+    
+    // Set initial animation state (hidden and moved)
+    participantElement.style.opacity = '0';
+    participantElement.style.transform = 'translateX(-20px)';
+    participantElement.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+    
+    // Add to DOM
+    elements.participantsList.appendChild(participantElement);
+    
+    // Trigger animation after DOM insertion
+    setTimeout(() => {
+      participantElement.style.opacity = '1';
+      participantElement.style.transform = 'translateX(0)';
+    }, 10); // Small delay to ensure DOM insertion
+    
+    return participantElement;
+  }
+  
+  function addParticipantToUI(participant) {
+    if (!elements.participantsList) return;
+    
+    // Check if participant already exists
+    const existingParticipant = elements.participantsList.querySelector(`[data-remove="${participant.login}"]`);
+    if (existingParticipant) {
+      console.log('Participant already exists:', participant.login);
+      return;
+    }
+    
+    // Add with animation
+    addParticipantWithAnimation(participant);
+    
+    // Update counters - use updateParticipantCount for accurate DOM-based count
+    updateParticipantCount();
+    StateManager.updateButtonStates();
+    checkScrollbar();
+    
+    console.log('✅ Added participant to UI with animation:', participant.login);
+  }
+  
+  function clearAllParticipantsIncludingTestAndBots() {
+    if (!elements.participantsList) return;
+    
+    const participants = Array.from(elements.participantsList.children);
+    console.log('🧹 Clearing all participants including test and bots:', participants.length);
+    
+    // Immediately reset counters to prevent display issues
+    AppState.giveaway.entries = 0;
+    StateManager.updateEntriesDisplay();
+    StateManager.updateButtonStates();
+    
+    if (participants.length > 0) {
+      // Clear all participants at once without staggered animation to prevent counter issues
+      participants.forEach((participant) => {
+        participant.style.opacity = '0';
+        participant.style.transform = 'translateX(-20px)';
+        participant.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+      });
+      
+      // Remove all participants after animation
+      setTimeout(() => {
+        // Force clear the entire participants list
+        elements.participantsList.innerHTML = '';
+        
+        // Double-check counter reset
+        AppState.giveaway.entries = 0;
+        StateManager.updateEntriesDisplay();
+        StateManager.updateButtonStates();
+        updateParticipantCount();
+        
+        console.log('Teilnehmerliste komplett geleert (inkl. Test-Teilnehmer und Bots)');
+      }, 300);
+    } else {
+      // Even if no participants, ensure counter is correct
+      updateParticipantCount();
+    }
+  }
+  
+  function setParticipantLuck(username, multiplier) {
+    // Find participant in UI
+    const participantItem = elements.participantsList?.querySelector(`[data-login="${username}"]`) ||
+                           elements.participantsList?.querySelector(`[data-remove="${username}"]`) ||
+                           Array.from(elements.participantsList?.querySelectorAll('.participant-row') || [])
+                             .find(row => row.textContent.toLowerCase().includes(username.toLowerCase()));
+    
+    if (!participantItem) {
+      sendAdminFeedback(`❌ Could not find ${username} in participants`, 'error');
+      return;
+    }
+    
+    // Update luck multiplier in UI
+    const luckElement = participantItem.querySelector('.participant-luck');
+    if (luckElement) {
+      luckElement.textContent = multiplier.toFixed(1) + 'x';
+      luckElement.style.color = multiplier > 1 ? 'var(--success)' : 'var(--text-primary)';
+      
+      // Add subtle visual feedback - only highlight text content
+      luckElement.style.display = 'inline-block';
+      luckElement.style.backgroundColor = 'var(--success)';
+      luckElement.style.color = 'white';
+      luckElement.style.borderRadius = '4px';
+      luckElement.style.padding = '2px 6px';
+      luckElement.style.fontWeight = 'bold';
+      luckElement.style.fontSize = '0.85em';
+      luckElement.style.transition = 'all 0.4s ease';
+      luckElement.style.width = 'auto';
+      luckElement.style.textAlign = 'center';
+      
+      setTimeout(() => {
+        luckElement.style.display = '';
+        luckElement.style.backgroundColor = '';
+        luckElement.style.color = multiplier > 1 ? 'var(--success)' : 'var(--text-primary)';
+        luckElement.style.borderRadius = '';
+        luckElement.style.padding = '';
+        luckElement.style.fontWeight = '';
+        luckElement.style.fontSize = '';
+        luckElement.style.width = '';
+        luckElement.style.textAlign = '';
+      }, 1200);
+      
+      sendAdminFeedback(`🍀 Set ${username} luck to ${multiplier}x`, 'success');
+      console.log('🍀 Updated participant luck:', username, 'New luck:', multiplier);
+    } else {
+      sendAdminFeedback(`❌ Could not update luck display for ${username}`, 'error');
+    }
+  }
+  
+  function sendAdminFeedback(message, type = 'info') {
+    // Show toast notification
+    UIManager.showToast(message, type);
+    
+    // Also add message to chat for visual feedback
+    const chatList = document.getElementById('chatList');
+    if (chatList) {
+      const color = type === 'success' ? '#00ff00' : type === 'error' ? '#ff0000' : '#ffaa00';
+      const row = document.createElement('div');
+      row.className = 'msg admin-msg';
+      row.style.borderLeft = `3px solid ${color}`;
+      row.innerHTML = `
+        <div class="msg-content">
+          <div class="chat-user-info">
+            <span class="user" style="color:${color}">🛠️ ADMIN:</span>
+          </div>
+          <span class="msg-text">${message}</span>
+        </div>
+      `;
+      
+      chatList.appendChild(row);
+      chatList.scrollTop = chatList.scrollHeight;
+      
+      // Remove admin message after 10 seconds
+      setTimeout(() => {
+        if (row.parentNode) row.remove();
+      }, 10000);
+    }
+  }
 
   socket.on('giveaway:winner', (winner) => {
     showWinnerModal(winner);
@@ -2939,7 +3521,7 @@ StateManager.updateEntriesDisplay();
     
     const existingHost = elements.participantsList.querySelector(`[data-remove="${hostParticipant.login}"]`);
     if (!existingHost) {
-      elements.participantsList.appendChild(renderParticipant(hostParticipant));
+      addParticipantWithAnimation(hostParticipant);
       updateParticipantCount();
       checkScrollbar();
     }
@@ -2982,7 +3564,7 @@ StateManager.updateEntriesDisplay();
       return;
     }
     
-    elements.participantsList.appendChild(renderParticipant(p));
+    addParticipantWithAnimation(p);
     updateParticipantCount();
     checkScrollbar();
   });
@@ -3096,21 +3678,12 @@ StateManager.updateEntriesDisplay();
     });
   }
   
-  // Add event listener for test participants button
-  const testParticipantsBtn = document.getElementById('testParticipantsBtn');
-  if (testParticipantsBtn) {
-    testParticipantsBtn.addEventListener('click', () => {
-      addTestParticipants();
-    });
-  }
   
   console.log('Benutzer-Authentifizierung und Session-Isolierung aktiv');
   console.log('Timer-Ende-Bug behoben - Teilnehmer werden korrekt ausgewählt');
   console.log('MM:SS Zeitformat mit 10-Sekunden-Schritten implementiert');
   console.groupEnd();
   
-  // Add test function for visualizing 20 participants
-  window.addTestParticipants = addTestParticipants;
   
   // Initialize admin system
   AdminSystem.init();
@@ -3295,105 +3868,6 @@ function safeSocketEmit(eventName, data, callback) {
   }
 }
 
-// Test function to add 20 mock participants for visualization
-function addTestParticipants() {
-  console.log('Test-Teilnehmer werden hinzugefügt...');
-  console.log('AppState:', {
-    exists: typeof AppState !== 'undefined',
-    giveawayStatus: typeof AppState !== 'undefined' ? AppState.giveaway.status : 'N/A'
-  });
-  
-  // Check if giveaway is active
-  if (typeof AppState !== 'undefined' && AppState.giveaway.status !== 'ACTIVE') {
-    console.log('Giveaway ist nicht aktiv - Status:', AppState.giveaway.status);
-    if (typeof UIManager !== 'undefined' && UIManager.showToast) {
-      UIManager.showToast('Test-Teilnehmer können nur bei aktivem Giveaway hinzugefügt werden', 'warning');
-    }
-    return;
-  }
-  
-  // Get DOM elements directly since we're outside the boot() scope
-  const participantsList = document.getElementById('participantsList');
-  const participantCount = document.getElementById('participantCount');
-  const entriesEl = document.getElementById('entries');
-  const emptyPanel = document.getElementById('emptyPanel');
-  
-  if (!participantsList) {
-    console.error('Teilnehmerliste nicht gefunden');
-    return;
-  }
-  
-  console.group('🧪 Test Teilnehmer');
-  console.log('Füge einen Test-Teilnehmer hinzu...');
-  
-  const mockParticipants = [
-    { login: 'streamer_pro', displayName: 'StreamerPro', luck: 5.0, profileImageUrl: 'https://picsum.photos/64/64?random=1' },
-    { login: 'gamer_legend', displayName: 'GamerLegend', luck: 3.5, profileImageUrl: 'https://picsum.photos/64/64?random=2' },
-    { login: 'twitch_master', displayName: 'TwitchMaster', luck: 2.8, profileImageUrl: 'https://picsum.photos/64/64?random=3' },
-    { login: 'chat_king', displayName: 'ChatKing', luck: 4.2, profileImageUrl: 'https://picsum.photos/64/64?random=4' },
-    { login: 'viewer_123', displayName: 'Viewer123', luck: 1.0, profileImageUrl: 'https://picsum.photos/64/64?random=5' },
-    { login: 'emoji_user', displayName: 'EmojiUser😎', luck: 1.8, profileImageUrl: 'https://picsum.photos/64/64?random=6' },
-    { login: 'sub_veteran', displayName: 'SubVeteran', luck: 6.0, profileImageUrl: 'https://picsum.photos/64/64?random=7' },
-    { login: 'bit_supporter', displayName: 'BitSupporter', luck: 3.0, profileImageUrl: 'https://picsum.photos/64/64?random=8' },
-    { login: 'longtime_fan', displayName: 'LongtimeFan', luck: 2.5, profileImageUrl: 'https://picsum.photos/64/64?random=9' },
-    { login: 'new_viewer', displayName: 'NewViewer', luck: 1.0, profileImageUrl: 'https://picsum.photos/64/64?random=10' },
-    { login: 'mod_helper', displayName: 'ModHelper', luck: 4.5, profileImageUrl: 'https://picsum.photos/64/64?random=11' },
-    { login: 'clip_creator', displayName: 'ClipCreator', luck: 2.2, profileImageUrl: 'https://picsum.photos/64/64?random=12' },
-    { login: 'raid_leader', displayName: 'RaidLeader', luck: 3.8, profileImageUrl: 'https://picsum.photos/64/64?random=13' },
-    { login: 'emote_spammer', displayName: 'EmoteSpammer', luck: 1.5, profileImageUrl: 'https://picsum.photos/64/64?random=14' },
-    { login: 'question_asker', displayName: 'QuestionAsker', luck: 1.3, profileImageUrl: 'https://picsum.photos/64/64?random=15' },
-    { login: 'hype_train_conductor', displayName: 'HypeTrainConductor', luck: 7.5, profileImageUrl: 'https://picsum.photos/64/64?random=16' },
-    { login: 'donation_hero', displayName: 'DonationHero', luck: 8.0, profileImageUrl: 'https://picsum.photos/64/64?random=17' },
-    { login: 'lurker_supreme', displayName: 'LurkerSupreme', luck: 1.1, profileImageUrl: 'https://picsum.photos/64/64?random=18' },
-    { login: 'stream_sniper', displayName: 'StreamSniper', luck: 2.0, profileImageUrl: 'https://picsum.photos/64/64?random=19' },
-    { login: 'community_builder', displayName: 'CommunityBuilder', luck: 5.5, profileImageUrl: 'https://picsum.photos/64/64?random=20' }
-  ];
-  
-  // Hide empty panel when adding test participants
-  if (emptyPanel) {
-    emptyPanel.style.display = 'none';
-  }
-  
-  // Pick one random participant from the list
-  const randomIndex = Math.floor(Math.random() * mockParticipants.length);
-  const participant = mockParticipants[randomIndex];
-  
-  // Add unique timestamp to make each participant unique
-  const timestamp = Date.now();
-  participant.login = `${participant.login}_${timestamp}`;
-  
-  // Send participant to server
-  const success = safeSocketEmit('test-participant-add', {
-    login: participant.login,
-    displayName: participant.displayName,
-    luck: participant.luck,
-    profileImageUrl: participant.profileImageUrl || null,
-    isTestParticipant: true
-  });
-  
-  if (success) {
-    console.log(`Sende Test-Teilnehmer: ${participant.login} mit Profilbild: ${participant.profileImageUrl}`);
-  }
-  
-  // Update AppState if available (will be updated by server response)
-  if (typeof AppState !== 'undefined') {
-    // Don't manually update entries here - let the server handle it
-  }
-  
-  // Show success notification
-  if (typeof UIManager !== 'undefined' && UIManager.showToast) {
-    UIManager.showToast(`Adding ${mockParticipants.length} test participants...`, 'info');
-    
-    // Show completion toast after all participants are added
-    setTimeout(() => {
-      UIManager.showToast(`Successfully added ${mockParticipants.length} test participants with profile pictures!`, 'success');
-    }, mockParticipants.length * 50 + 500);
-  }
-  
-  console.log(`${mockParticipants.length} Test-Teilnehmer hinzugefügt`);
-  console.log('Zum Löschen: Seite aktualisieren oder neues Giveaway starten');
-  console.groupEnd();
-}
 
 // Enhanced HTML escaping with additional security measures
 function escapeHtml(s) {
