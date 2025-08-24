@@ -70,10 +70,48 @@ const AdminSystem = {
   }
 };
 
+// Function to load user badges and luck multiplier
+async function loadUserBadges(user) {
+  try {
+    console.log('🏷️ Lade Badges für Benutzer:', user.login);
+    
+    // Versuche Badges über eine API-Route zu laden
+    const response = await fetch(`/api/user/${user.id}/badges`);
+    if (response.ok) {
+      const badgeData = await response.json();
+      if (badgeData.badges) {
+        AppState.userBadges = badgeData.badges;
+        AppState.userLuck = badgeData.luck || 1.0;
+        console.log('✅ Badges geladen:', AppState.userBadges.length, 'Badges, Luck:', AppState.userLuck);
+        return;
+      }
+    }
+    
+    // Fallback: Anfrage über Socket um Badge-Informationen zu erhalten
+    console.log('⚠️ API-Route nicht verfügbar, frage Badges über Socket an...');
+    if (typeof socket !== 'undefined' && socket && socket.connected) {
+      socket.emit('request:user-badges', { userId: user.id });
+      
+      // Zusätzlicher Fallback: Sende eine unsichtbare Nachricht um Badge-Trigger auszulösen
+      setTimeout(() => {
+        if (AppState.userBadges.length === 0) {
+          console.log('🔄 Sende Badge-Trigger-Nachricht...');
+          // Diese Nachricht wird nicht im Chat angezeigt, aber Badge-Informationen triggern
+          socket.emit('chat:get-badges', { userId: user.id, trigger: true });
+        }
+      }, 1000);
+    }
+  } catch (error) {
+    console.warn('Fehler beim Laden der Badges:', error);
+  }
+}
+
 async function boot() {
   // Enhanced State Management System
   const AppState = {
     user: null, // Aktueller Benutzer
+    userBadges: [], // Cache für Badges des aktuellen Benutzers
+    userLuck: 1.0, // Cache für Luck-Multiplier des aktuellen Benutzers
     giveaway: {
       status: 'INACTIVE', // INACTIVE, ACTIVE, PAUSED
       keyword: '!join',
@@ -321,20 +359,15 @@ const Validators = {
       if (AppState.giveaway.entries > 0) {
         console.log('Automatische Gewinner-Auswahl durch Timer-Ende');
         
-        // Setze Status auf PAUSED um weitere Teilnahmen zu verhindern
-        StateManager.updateStatus('PAUSED');
-        
-        // Kurze Verzögerung für UI Update, dann Winner ziehen
-        setTimeout(async () => {
-          try {
-            // Verwende die Server API für korrekten Winner Pick
-            await EventHandlers.pickWinner();
-          } catch (error) {
-            console.error('Fehler bei automatischer Gewinner-Auswahl:', error);
-            UIManager.showToast('Failed to pick winner automatically', 'error');
-            StateManager.updateStatus('INACTIVE');
-          }
-        }, 500);
+        // Gehe direkt zur Gewinner-Auswahl ohne PAUSED Status
+        try {
+          // Verwende die Server API für korrekten Winner Pick
+          await EventHandlers.pickWinner();
+        } catch (error) {
+          console.error('Fehler bei automatischer Gewinner-Auswahl:', error);
+          UIManager.showToast('Failed to pick winner automatically', 'error');
+          StateManager.updateStatus('INACTIVE');
+        }
       } else {
         console.log('Timer beendet ohne Teilnehmer');
         StateManager.updateStatus('INACTIVE');
@@ -544,8 +577,49 @@ const Validators = {
 
   // Enhanced UI Management
   const UIManager = {
+    // Utility function to enforce toast limit
+    enforceToastLimit() {
+      if (!elements.toastContainer) return;
+      
+      const existingToasts = elements.toastContainer.querySelectorAll('.toast');
+      const maxToasts = 3;
+      
+      if (existingToasts.length >= maxToasts) {
+        // Remove oldest toasts to make room
+        const toastsToRemove = existingToasts.length - maxToasts + 1;
+        for (let i = 0; i < toastsToRemove; i++) {
+          const oldestToast = existingToasts[i];
+          if (oldestToast) {
+            oldestToast.classList.remove('toast--show');
+            setTimeout(() => {
+              if (oldestToast.parentNode) {
+                oldestToast.remove();
+              }
+            }, 300);
+          }
+        }
+      }
+    },
 showResetConfirmation() {
   if (!elements.toastContainer) return;
+  
+  // Check if a reset toast already exists
+  const existingResetToast = document.getElementById('activeResetToast');
+  if (existingResetToast) {
+    console.log('Reset-Toast bereits aktiv - ignoriere neue Anfrage');
+    return;
+  }
+  
+  // Remove all other toasts to make room for reset toast
+  const existingToasts = elements.toastContainer.querySelectorAll('.toast');
+  existingToasts.forEach(toast => {
+    toast.classList.remove('toast--show');
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.remove();
+      }
+    }, 300);
+  });
   
   const resetToast = document.createElement('div');
   resetToast.className = 'toast toast--danger reset-toast';
@@ -578,6 +652,17 @@ showResetConfirmation() {
   });
   
   setTimeout(() => resetToast.classList.add('toast--show'), 10);
+  
+  // Auto-hide after 10 seconds
+  setTimeout(() => {
+    const stillExists = document.getElementById('activeResetToast');
+    if (stillExists) {
+      console.log('Reset-Toast automatisch ausgeblendet nach 10 Sekunden');
+      this.hideResetConfirmation();
+      EventHandlers.cancelReset();
+    }
+  }, 10000);
+  
   console.group('🔄 Reset');
   console.log('Reset Bestätigung angezeigt');
 },
@@ -595,6 +680,9 @@ hideResetConfirmation() {
     showToast(message, type = 'success') {
       if (!elements.toastContainer) return;
 
+      // Enforce toast limit before showing new toast
+      this.enforceToastLimit();
+
       const toast = document.createElement('div');
       toast.className = `toast toast--${type}`;
       toast.innerHTML = `
@@ -611,7 +699,11 @@ hideResetConfirmation() {
       
       setTimeout(() => {
         toast.classList.remove('toast--show');
-        setTimeout(() => toast.remove(), 300);
+        setTimeout(() => {
+          if (toast.parentNode) {
+            toast.remove();
+          }
+        }, 300);
       }, 3000);
     }
   };
@@ -1171,6 +1263,13 @@ const res = await fetch('/api/giveaway/start', {
         const res = await fetch('/api/giveaway/stop', { method: 'POST' });
         if (res.ok) {
           StateManager.updateStatus('INACTIVE');
+          
+          // Beim kompletten Reset entferne alle Konfetti-Animationen
+          const confettiContainer = document.getElementById('confettiContainer');
+          if (confettiContainer) {
+            confettiContainer.innerHTML = '';
+          }
+          
           UIManager.showToast('Giveaway reset successfully');
           console.log('Giveaway zurückgesetzt');
           console.groupEnd();
@@ -1274,10 +1373,7 @@ const res = await fetch('/api/giveaway/start', {
       existingModal.classList.remove('modal--show');
     }
     
-    const confettiContainer = document.getElementById('confettiContainer');
-    if (confettiContainer) {
-      confettiContainer.innerHTML = '';
-    }
+    // Konfetti wird nicht gelöscht - lasse laufende Animationen weiterlaufen
     
     AppState.winner.currentWinner = winner;
     AppState.winner.winTime = new Date();
@@ -1506,10 +1602,23 @@ const res = await fetch('/api/giveaway/start', {
     const textElement = messageElement.querySelector('.msg-text');
     if (!textElement) return;
     
-    // First: Clean up any existing IMG tags that might be showing as text
-    let textContent = textElement.textContent || textElement.innerText || '';
+    // Check if HTML emotes are already rendered properly
+    const htmlContent = textElement.innerHTML;
+    if (htmlContent.includes('<img') && htmlContent.includes('chat-emote')) {
+      console.log(`🔄 Found HTML emotes already rendered, keeping them as-is`);
+      // Emotes are already properly rendered as HTML, just ensure error handling
+      const emoteImages = textElement.querySelectorAll('img.chat-emote');
+      emoteImages.forEach(img => {
+        img.addEventListener('error', () => {
+          console.warn('Emote failed to load:', img.src);
+          img.style.display = 'none';
+        });
+      });
+      return;
+    }
     
-    // Remove any HTML img tags that appear as text
+    // Clean up any existing IMG tags that might be showing as text
+    let textContent = textElement.textContent || textElement.innerText || '';
     textContent = textContent.replace(/<img[^>]*>/g, '');
     
     // If we have emote data from server, use that
@@ -1517,14 +1626,6 @@ const res = await fetch('/api/giveaway/start', {
       console.log(`🎭 Using emote data from server:`, emotes);
       textElement.textContent = textContent; // Set clean text first
       renderEmotesInText(textElement, emotes);
-      return;
-    }
-    
-    // Fallback: Try to parse any HTML img tags if they exist
-    const htmlContent = textElement.innerHTML;
-    if (htmlContent.includes('<img') && htmlContent.includes('chat-emote')) {
-      console.log(`🔄 Found HTML emotes, keeping them as-is`);
-      // HTML emotes are already there, just enhance them
       return;
     }
     
@@ -1710,25 +1811,7 @@ const res = await fetch('/api/giveaway/start', {
   });
   
   // KORRIGIERTE participant:add Handler
-  socket.on('participant:add', (p) => {
-    console.log('Teilnehmer hinzugefügt:', p.login);
-    AppState.giveaway.entries++;
-    StateManager.updateEntriesDisplay();
-    StateManager.updateButtonStates();
-    
-    if (!elements.participantsList) return;
-    
-    const existingParticipant = elements.participantsList.querySelector(`[data-remove="${p.login}"]`);
-    if (existingParticipant) {
-      console.log('Teilnehmer existiert bereits:', p.login);
-      return;
-    }
-    
-    elements.participantsList.appendChild(renderParticipant(p));
-    updateParticipantCount();
-    checkScrollbar();
-    
-  });
+  // Removed duplicate - handled in later socket.on('participant:add')
   
   socket.on('participant:remove', (data) => {
     AppState.giveaway.entries = Math.max(0, AppState.giveaway.entries - 1);
@@ -1855,6 +1938,9 @@ const res = await fetch('/api/giveaway/start', {
         header.avatar.alt = (me.displayName || me.login || 'avatar') + ' avatar';
       }
       
+      // Lade Badge-Informationen des aktuellen Benutzers
+      await loadUserBadges(me);
+      
       // Nach dem Laden des Benutzers authentifiziere den Socket
       const success = localSafeSocketEmit('auth', AppState.user.id);
       if (success) {
@@ -1942,6 +2028,31 @@ StateManager.updateEntriesDisplay();
     });
   });
 
+  // Brand logo navigation - go back to Giveaways tab
+  document.getElementById('brandLogo')?.addEventListener('click', () => {
+    // Find the giveaways tab and simulate a click
+    const giveawaysTab = document.querySelector('[data-tab="giveaways"]');
+    if (giveawaysTab) {
+      // Remove active state from all tabs
+      document.querySelectorAll('.tab').forEach(t => {
+        t.classList.remove('is-active');
+        t.setAttribute('aria-selected', 'false');
+      });
+      
+      // Activate giveaways tab
+      giveawaysTab.classList.add('is-active');
+      giveawaysTab.setAttribute('aria-selected', 'true');
+      
+      // Hide all views and show giveaways view
+      document.querySelectorAll('.view').forEach(view => {
+        view.classList.remove('is-visible');
+      });
+      document.getElementById('giveaways')?.classList.add('is-visible');
+      
+      console.log('🏠 Navigated to Giveaways via brand logo');
+    }
+  });
+
   // Logout
   document.getElementById('logoutBtn')?.addEventListener('click', () => {
     window.location.href = '/logout';
@@ -1956,31 +2067,62 @@ StateManager.updateEntriesDisplay();
     const container = document.getElementById('confettiContainer');
     if (!container) return;
 
-    container.innerHTML = '';
-    
-    const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#f0932b', '#eb4d4b', '#6c5ce7'];
-    
-    for (let i = 0; i < 100; i++) {
-      const confetti = document.createElement('div');
-      confetti.className = 'confetti';
-      confetti.style.left = Math.random() * 100 + '%';
-      confetti.style.top = '-10px';
-      confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
-      confetti.style.animationDelay = Math.random() * 3 + 's';
-      confetti.style.animationDuration = (Math.random() * 3 + 2) + 's';
-      container.appendChild(confetti);
+    // Entferne sofort alle vorherigen Konfetti-Animationen
+    const existingGroups = container.querySelectorAll('.confetti-group');
+    if (existingGroups.length > 0) {
+      console.log('Entferne vorheriges Konfetti sofort für neues...');
+      existingGroups.forEach(group => {
+        group.remove();
+      });
     }
     
-    setTimeout(() => {
-      const confettiElements = container.querySelectorAll('.confetti');
-      confettiElements.forEach(element => {
-        element.style.animationIterationCount = '1';
-      });
+    // Starte sofort neues Konfetti
+    startNewConfetti();
+    
+    function startNewConfetti() {
+      const confettiGroup = document.createElement('div');
+      confettiGroup.className = 'confetti-group';
+      confettiGroup.style.position = 'absolute';
+      confettiGroup.style.width = '100%';
+      confettiGroup.style.height = '100%';
+      confettiGroup.style.pointerEvents = 'none';
+      confettiGroup.style.opacity = '1';
       
+      const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#f0932b', '#eb4d4b', '#6c5ce7'];
+      
+      for (let i = 0; i < 100; i++) {
+        const confetti = document.createElement('div');
+        confetti.className = 'confetti';
+        confetti.style.left = Math.random() * 100 + '%';
+        confetti.style.top = '-10px';
+        confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        confetti.style.animationDelay = Math.random() * 3 + 's';
+        confetti.style.animationDuration = (Math.random() * 3 + 2) + 's';
+        confettiGroup.appendChild(confetti);
+      }
+      
+      container.appendChild(confettiGroup);
+      
+      // Entferne diese Konfetti-Gruppe nach der Animation
       setTimeout(() => {
-        container.innerHTML = '';
+        const confettiElements = confettiGroup.querySelectorAll('.confetti');
+        confettiElements.forEach(element => {
+          element.style.animationIterationCount = '1';
+        });
+        
+        setTimeout(() => {
+          if (confettiGroup.parentNode) {
+            confettiGroup.style.transition = 'opacity 1s ease-out';
+            confettiGroup.style.opacity = '0';
+            setTimeout(() => {
+              if (confettiGroup.parentNode) {
+                confettiGroup.remove();
+              }
+            }, 1000);
+          }
+        }, 5000);
       }, 5000);
-    }, 5000);
+    }
   }
 
   document.getElementById('closeWinnerModal')?.addEventListener('click', () => {
@@ -1990,10 +2132,7 @@ StateManager.updateEntriesDisplay();
       console.log('Gewinner Modal manuell geschlossen');
       console.groupEnd();
       
-      const confettiContainer = document.getElementById('confettiContainer');
-      if (confettiContainer) {
-        confettiContainer.innerHTML = '';
-      }
+      // Konfetti läuft automatisch aus - wird durch setTimeout in createConfetti() selbst entfernt
       
       if (AppState.winner.timerInterval) {
         clearInterval(AppState.winner.timerInterval);
@@ -2712,10 +2851,33 @@ StateManager.updateEntriesDisplay();
     const msg = (ev?.message ?? ev?.text ?? '').toString();
     const name = ev?.user || 'User';
     const color = ev?.color || '#a2a2ad';
-    const badges = renderBadges(ev.badges || []);
+    
+    // Cache Badges und Luck für aktuellen Benutzer falls es seine Nachricht ist
+    if (AppState.user && name.toLowerCase() === AppState.user.login.toLowerCase()) {
+      if (ev.badges && ev.badges.length > 0) {
+        AppState.userBadges = ev.badges;
+      }
+      if (ev.luck && ev.luck > 1) {
+        AppState.userLuck = ev.luck;
+      }
+    }
+    
+    // Verwende gecachte Badges für Website-Nachrichten des aktuellen Benutzers
+    let badgesForMessage = ev.badges || [];
+    if (ev.isWebsiteMessage && AppState.user && name.toLowerCase() === AppState.user.login.toLowerCase()) {
+      badgesForMessage = AppState.userBadges || [];
+    }
+    
+    const badges = renderBadges(badgesForMessage);
+    
+    // Verwende gecachte Luck für Website-Nachrichten des aktuellen Benutzers
+    let luckForMessage = ev.luck;
+    if (ev.isWebsiteMessage && AppState.user && name.toLowerCase() === AppState.user.login.toLowerCase()) {
+      luckForMessage = AppState.userLuck || ev.luck;
+    }
     
     // ✅ KORRIGIERT: Zeige Luck-Multiplier richtig an
-    const multiplierText = (ev.luck && ev.luck > 1) ? `${ev.luck.toFixed(2)}x` : '';
+    const multiplierText = (luckForMessage && luckForMessage > 1) ? `${luckForMessage.toFixed(2)}x` : '';
     const isParticipant = ev.isParticipant || false;
     
     console.group('💬 Chat Nachricht');
@@ -2723,14 +2885,21 @@ StateManager.updateEntriesDisplay();
       user: name,
       message: msg,
       emotes: ev.emotes,
-      badgeCount: (ev.badges || []).length,
-      badges: (ev.badges || []).map(b => b.name),
-      luck: ev.luck,
-      multiplierText
+      isWebsiteMessage: ev.isWebsiteMessage,
+      badgeCount: badgesForMessage.length,
+      badges: badgesForMessage.map(b => b.name),
+      originalLuck: ev.luck,
+      usedLuck: luckForMessage,
+      multiplierText,
+      cachedBadges: ev.isWebsiteMessage ? AppState.userBadges.length : 'N/A'
     });
       
     const empty = elements.chatList.querySelector('.empty');
     if (empty) empty.remove();
+    
+    // Check if message contains emote HTML that should not be escaped
+    const containsEmoteHtml = msg.includes('<img') && msg.includes('chat-emote');
+    const messageContent = containsEmoteHtml ? msg : escapeHtml(msg);
     
     const row = el(`
       <div class="msg ${isParticipant ? 'participant-msg' : ''}" data-username="${escapeHtml(name)}">
@@ -2740,7 +2909,7 @@ StateManager.updateEntriesDisplay();
             <span class="user" style="color:${color}">${escapeHtml(name)}:</span>
             ${multiplierText ? `<span class="luck-indicator">${multiplierText}</span>` : ''}
           </div>
-          <span class="msg-text">${escapeHtml(msg)}</span>
+          <span class="msg-text">${messageContent}</span>
         </div>
       </div>
     `);
@@ -2776,6 +2945,48 @@ StateManager.updateEntriesDisplay();
     }
   });
 
+  // Handler für Badge-Antwort vom Server
+  socket.on('response:user-badges', (data) => {
+    if (data.badges) {
+      AppState.userBadges = data.badges;
+      AppState.userLuck = data.luck || 1.0;
+      console.log('✅ Badges via Socket empfangen:', AppState.userBadges.length, 'Badges, Luck:', AppState.userLuck);
+    }
+  });
+
+  // Handler für neue Teilnehmer - cache Badges falls es der aktuelle User ist
+  socket.on('participant:add', (p) => {
+    console.log('Teilnehmer hinzugefügt:', p.login, 'Luck:', p.luck);
+    
+    // Wenn es der aktuelle User ist, cache seine Badge-Informationen
+    if (AppState.user && p.login && p.login.toLowerCase() === AppState.user.login.toLowerCase()) {
+      if (p.badges && p.badges.length > 0) {
+        AppState.userBadges = p.badges;
+        console.log('✅ Badges von Teilnehmer-Event gecacht:', AppState.userBadges.length);
+      }
+      if (p.luck && p.luck > 1) {
+        AppState.userLuck = p.luck;
+        console.log('✅ Luck von Teilnehmer-Event gecacht:', AppState.userLuck);
+      }
+    }
+    
+    AppState.giveaway.entries++;
+    StateManager.updateEntriesDisplay();
+    StateManager.updateButtonStates();
+
+    if (!elements.participantsList) return;
+    
+    const existingParticipant = elements.participantsList.querySelector(`[data-remove="${p.login}"]`);
+    if (existingParticipant) {
+      console.log('Teilnehmer existiert bereits:', p.login);
+      return;
+    }
+    
+    elements.participantsList.appendChild(renderParticipant(p));
+    updateParticipantCount();
+    checkScrollbar();
+  });
+
   socket.on('participant:spam_blocked', (data) => {
     const item = elements.participantsList?.querySelector(`[data-remove="${data.login}"]`)?.closest('li');
     if (item) {
@@ -2808,10 +3019,7 @@ StateManager.updateEntriesDisplay();
       if (modal && modal.classList.contains('modal--show')) {
         modal.classList.remove('modal--show');
         
-        const confettiContainer = document.getElementById('confettiContainer');
-        if (confettiContainer) {
-          confettiContainer.innerHTML = '';
-        }
+        // Konfetti läuft automatisch aus - wird durch setTimeout in createConfetti() selbst entfernt
         
         if (AppState.winner.timerInterval) {
           clearInterval(AppState.winner.timerInterval);
@@ -2831,10 +3039,7 @@ StateManager.updateEntriesDisplay();
         modal.classList.remove('modal--show');
         console.log('🏆 Winner modal closed by ESC key');
         
-        const confettiContainer = document.getElementById('confettiContainer');
-        if (confettiContainer) {
-          confettiContainer.innerHTML = '';
-        }
+        // Konfetti läuft automatisch aus - wird durch setTimeout in createConfetti() selbst entfernt
         
         if (AppState.winner.timerInterval) {
           clearInterval(AppState.winner.timerInterval);
