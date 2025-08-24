@@ -1492,52 +1492,49 @@ if (!res.ok) {
           
           // Follower information
           const followStatusEl = document.getElementById('winnerFollowStatus');
-          const followDateEl = document.getElementById('winnerFollowDate');
-          const followDateValueEl = document.getElementById('winnerFollowDateValue');
           
           if (followStatusEl) {
             if (userInfo.followInfo && userInfo.followInfo.isFollowing) {
               followStatusEl.textContent = '✓ Following';
               followStatusEl.style.color = 'var(--success)';
-              
-              if (followDateEl && followDateValueEl && userInfo.followInfo.followedAt) {
-                followDateValueEl.textContent = formatDate(userInfo.followInfo.followedAt);
-                followDateEl.style.display = 'block';
-              }
             } else if (userInfo.followInfo && userInfo.followInfo.isFollowing === false) {
-              followStatusEl.textContent = 'Not following';
-              followStatusEl.style.color = 'var(--error)';
-              if (followDateEl) followDateEl.style.display = 'none';
+              followStatusEl.textContent = '✗ Not following';
+              followStatusEl.style.color = '#ff4444';
             } else {
               followStatusEl.textContent = 'Unable to load';
               followStatusEl.style.color = 'var(--text-muted)';
-              if (followDateEl) followDateEl.style.display = 'none';
             }
           }
         } else {
           const createdAtEl = document.getElementById('winnerCreatedAt');
           const followStatusEl = document.getElementById('winnerFollowStatus');
-          const followDateEl = document.getElementById('winnerFollowDate');
           
           if (createdAtEl) createdAtEl.textContent = 'Unable to load';
           if (followStatusEl) {
             followStatusEl.textContent = 'Unable to load';
             followStatusEl.style.color = 'var(--text-muted)';
           }
-          if (followDateEl) followDateEl.style.display = 'none';
         }
       } catch (e) {
         console.error('Fehler beim Laden der Benutzer-Info:', e);
         const createdAtEl = document.getElementById('winnerCreatedAt');
         const followStatusEl = document.getElementById('winnerFollowStatus');
-        const followDateEl = document.getElementById('winnerFollowDate');
         
         if (createdAtEl) createdAtEl.textContent = 'Error loading data';
         if (followStatusEl) {
           followStatusEl.textContent = 'Error loading data';
           followStatusEl.style.color = 'var(--text-muted)';
         }
-        if (followDateEl) followDateEl.style.display = 'none';
+      }
+    } else {
+      // No userId available - set default values to clear "Loading..." text
+      const createdAtEl = document.getElementById('winnerCreatedAt');
+      const followStatusEl = document.getElementById('winnerFollowStatus');
+      
+      if (createdAtEl) createdAtEl.textContent = 'Not available';
+      if (followStatusEl) {
+        followStatusEl.textContent = 'Not available';
+        followStatusEl.style.color = 'var(--text-muted)';
       }
     }
 
@@ -2403,15 +2400,8 @@ StateManager.updateEntriesDisplay();
   // ✅ KORRIGIERTE renderParticipant Funktion mit FIXED Luck Display
   function renderParticipant(p) {
     const login = p.login || p.name || p.user || '';
-    // Use proper display name or capitalize first letter of login as fallback
+    // Use exact Twitch display name or login as provided
     let display = p.display_name || p.displayName || p.display || login;
-    
-    // If display is same as login (lowercase), try to get proper capitalization
-    if (display === login && login.length > 0) {
-      // For real Twitch users, preserve their actual display name if available
-      // For test users, use the original name format
-      display = login.charAt(0).toUpperCase() + login.slice(1);
-    }
     const avatar = p.profileImageUrl || p.avatar || p.avatarUrl || '';
     const luck = p.luck || p.mult || 1.0;
     // ✅ KORRIGIERT: Zeige immer "X.XXx" Format, nie "No Multiplier"
@@ -2431,7 +2421,7 @@ StateManager.updateEntriesDisplay();
     }
     
     const li = el(`
-      <li class="row participant-row" data-login="${login}">
+      <li class="row participant-row" data-login="${login}" data-user-id="${p.userId || ''}">
         <div class="who">
           <div class="avatar">
             ${avatarHtml}
@@ -3152,6 +3142,14 @@ StateManager.updateEntriesDisplay();
     // Check if message is a command
     if (!msg.startsWith('!')) return;
     
+    // Get the command name
+    const parts = msg.slice(1).split(' ');
+    const command = parts[0].toLowerCase();
+    
+    // Only process actual admin commands, not giveaway keywords
+    const adminCommands = ['pick', 'add', 'set'];
+    if (!adminCommands.includes(command)) return;
+    
     // Debug: Log chat event structure
     console.log('🔍 Chat Event Debug:', {
       user: user,
@@ -3190,8 +3188,6 @@ StateManager.updateEntriesDisplay();
       return;
     }
     
-    const parts = msg.slice(1).split(' ');
-    const command = parts[0].toLowerCase();
     const subcommand = parts[1]?.toLowerCase();
     const args = parts.slice(2);
     
