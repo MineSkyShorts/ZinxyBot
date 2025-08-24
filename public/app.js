@@ -181,6 +181,8 @@ async function boot() {
     participantsList: document.getElementById('participantsList'),
     participantCount: document.getElementById('participantCount'),
     participantSearch: document.getElementById('participantSearch'),
+    sortBtn: document.getElementById('sortBtn'),
+    sortMenu: document.getElementById('sortMenu'),
     emptyPanel: document.getElementById('emptyPanel'),
     participantsHeader: document.querySelector('.participants-header h3'),
     
@@ -2069,7 +2071,7 @@ StateManager.updateEntriesDisplay();
     const pJson = await pRes.json();
     if (elements.participantsList) {
       elements.participantsList.innerHTML = '';
-      (pJson.participants || []).forEach(p => {
+      (pJson.participants || []).reverse().forEach(p => {
         elements.participantsList.appendChild(renderParticipant(p));
       });
     }
@@ -2378,6 +2380,73 @@ StateManager.updateEntriesDisplay();
       }
     });
   });
+
+  // Sort functionality
+  elements.sortBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    elements.sortMenu?.classList.toggle('show');
+  });
+
+  // Close sort menu when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!elements.sortMenu?.contains(e.target) && !elements.sortBtn?.contains(e.target)) {
+      elements.sortMenu?.classList.remove('show');
+    }
+  });
+
+  // Sort options event listeners
+  elements.sortMenu?.addEventListener('click', (e) => {
+    const sortOption = e.target.closest('.sort-option');
+    if (sortOption) {
+      const sortType = sortOption.dataset.sort;
+      sortParticipants(sortType);
+      elements.sortMenu.classList.remove('show');
+    }
+  });
+
+  function sortParticipants(sortType) {
+    if (!elements.participantsList) return;
+    
+    const participants = Array.from(elements.participantsList.querySelectorAll('li'));
+    
+    participants.sort((a, b) => {
+      switch (sortType) {
+        case 'name-asc':
+          const nameA = a.querySelector('.nick')?.textContent?.toLowerCase() || '';
+          const nameB = b.querySelector('.nick')?.textContent?.toLowerCase() || '';
+          return nameA.localeCompare(nameB);
+          
+        case 'name-desc':
+          const nameA2 = a.querySelector('.nick')?.textContent?.toLowerCase() || '';
+          const nameB2 = b.querySelector('.nick')?.textContent?.toLowerCase() || '';
+          return nameB2.localeCompare(nameA2);
+          
+        case 'luck-asc':
+          const luckA = parseFloat(a.querySelector('.participant-luck')?.textContent?.replace('x', '') || '1');
+          const luckB = parseFloat(b.querySelector('.participant-luck')?.textContent?.replace('x', '') || '1');
+          return luckA - luckB;
+          
+        case 'luck-desc':
+          const luckA2 = parseFloat(a.querySelector('.participant-luck')?.textContent?.replace('x', '') || '1');
+          const luckB2 = parseFloat(b.querySelector('.participant-luck')?.textContent?.replace('x', '') || '1');
+          return luckB2 - luckA2;
+          
+        default:
+          return 0;
+      }
+    });
+    
+    // Clear and re-append sorted participants
+    elements.participantsList.innerHTML = '';
+    participants.forEach(participant => {
+      elements.participantsList.appendChild(participant);
+    });
+    
+    // Re-initialize Lucide icons for the sorted elements
+    if (typeof lucide !== 'undefined') {
+      lucide.createIcons();
+    }
+  }
 
   function el(html) {
     const t = document.createElement('template');
@@ -3352,8 +3421,8 @@ StateManager.updateEntriesDisplay();
     participantElement.style.transform = 'translateX(-20px)';
     participantElement.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
     
-    // Add to DOM
-    elements.participantsList.appendChild(participantElement);
+    // Add to DOM - newest participants at the top
+    elements.participantsList.prepend(participantElement);
     
     // Trigger animation after DOM insertion
     setTimeout(() => {
