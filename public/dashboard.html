@@ -3,7 +3,6 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
   <title>ZinxyBot - Dashboard</title>
   
   <!-- Favicon aus brand.png -->
@@ -178,36 +177,11 @@
           <span class="participant-count" id="participantCount" 
                 aria-live="polite" aria-label="Participant count">0</span>
         </h3>
-        <div class="search-sort-controls">
-          <div class="search-field">
-            <input type="text" id="participantSearch" 
-                   placeholder="Search participants..." 
-                   aria-label="Search participants" />
-            <i data-lucide="search" aria-hidden="true"></i>
-          </div>
-          <div class="sort-dropdown">
-            <button class="sort-btn" id="sortBtn" aria-label="Sort participants">
-              <i data-lucide="arrow-up-down" aria-hidden="true"></i>
-            </button>
-            <div class="sort-menu" id="sortMenu">
-              <div class="sort-option" data-sort="name-asc">
-                <i data-lucide="arrow-up" aria-hidden="true"></i>
-                Name (A → Z)
-              </div>
-              <div class="sort-option" data-sort="name-desc">
-                <i data-lucide="arrow-down" aria-hidden="true"></i>
-                Name (Z → A)
-              </div>
-              <div class="sort-option" data-sort="luck-asc">
-                <i data-lucide="arrow-up" aria-hidden="true"></i>
-                Luck (Low → High)
-              </div>
-              <div class="sort-option" data-sort="luck-desc">
-                <i data-lucide="arrow-down" aria-hidden="true"></i>
-                Luck (High → Low)
-              </div>
-            </div>
-          </div>
+        <div class="search-field">
+          <input type="text" id="participantSearch" 
+                 placeholder="Search participants..." 
+                 aria-label="Search participants" />
+          <i data-lucide="search" aria-hidden="true"></i>
         </div>
       </div>
       
@@ -261,47 +235,47 @@
         Bot Settings
       </h1>
 
-      <!-- Bit Badge Luck Multipliers Settings -->
+      <!-- Bit Luck Multipliers Settings -->
       <div class="settings-group">
         <h2>
           <i data-lucide="coins" aria-hidden="true"></i>
-          Bit Badge Luck Multipliers
+          Bit Luck Multipliers
         </h2>
         <div class="grid two">
           <div class="slider-field">
             <label>1K Bit Badge <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="2" step="0.1" value="1.2" data-bits-range data-min="1000">
-            <o>1.20x</o>
+            <input type="range" min="1" max="2" step="0.01" value="1.2" data-bits-range data-min="1000">
+            <o class="editable-multiplier" data-min="1" data-max="2" data-for="1000">1.20x</o>
           </div>
           <div class="slider-field">
             <label>5K Bit Badge <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="2" step="0.1" value="1.5" data-bits-range data-min="5000">
-            <o>1.50x</o>
+            <input type="range" min="1" max="2" step="0.01" value="1.5" data-bits-range data-min="5000">
+            <o class="editable-multiplier" data-min="1" data-max="2" data-for="5000">1.50x</o>
           </div>
           <div class="slider-field">
             <label>10K Bit Badge <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="3" step="0.1" value="2" data-bits-range data-min="10000">
-            <o>2.00x</o>
+            <input type="range" min="1" max="3" step="0.01" value="2" data-bits-range data-min="10000">
+            <o class="editable-multiplier" data-min="1" data-max="3" data-for="10000">2.00x</o>
           </div>
           <div class="slider-field">
             <label>25K Bit Badge <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="4" step="0.1" value="3" data-bits-range data-min="25000">
-            <o>3.00x</o>
+            <input type="range" min="1" max="4" step="0.01" value="3" data-bits-range data-min="25000">
+            <o class="editable-multiplier" data-min="1" data-max="4" data-for="25000">3.00x</o>
           </div>
           <div class="slider-field">
             <label>50K Bit Badge <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="5" step="0.1" value="4" data-bits-range data-min="50000">
-            <o>4.00x</o>
+            <input type="range" min="1" max="5" step="0.01" value="4" data-bits-range data-min="50000">
+            <o class="editable-multiplier" data-min="1" data-max="5" data-for="50000">4.00x</o>
           </div>
           <div class="slider-field">
             <label>100K Bit Badge <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="6" step="0.1" value="5" data-bits-range data-min="100000">
-            <o>5.00x</o>
+            <input type="range" min="1" max="6" step="0.01" value="5" data-bits-range data-min="100000">
+            <o class="editable-multiplier" data-min="1" data-max="6" data-for="100000">5.00x</o>
           </div>
           <div class="slider-field">
             <label>1M Bit Badge <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="10" step="0.1" value="10" data-bits-range data-min="1000000">
-            <o>10.00x</o>
+            <input type="range" min="1" max="10" step="0.01" value="10" data-bits-range data-min="1000000">
+            <o class="editable-multiplier" data-min="1" data-max="10" data-for="1000000">10.00x</o>
           </div>
         </div>
       </div>
@@ -315,38 +289,38 @@
         <div class="grid two">
           <div class="slider-field">
             <label>Subscriber <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="2" step="0.1" value="1.2" data-subs-range data-min="1">
-            <o>1.20x</o>
+            <input type="range" min="1" max="2" step="0.01" value="1.2" data-subs-range data-min="1">
+            <o class="editable-multiplier" data-min="1" data-max="2" data-for="1">1.20x</o>
           </div>
           <div class="slider-field">
             <label>3 Month Sub <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="2" step="0.1" value="1.5" data-subs-range data-min="3">
-            <o>1.50x</o>
+            <input type="range" min="1" max="2" step="0.01" value="1.5" data-subs-range data-min="3">
+            <o class="editable-multiplier" data-min="1" data-max="2" data-for="3">1.50x</o>
           </div>
           <div class="slider-field">
             <label>6 Month Sub <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="3" step="0.1" value="2" data-subs-range data-min="6">
-            <o>2.00x</o>
+            <input type="range" min="1" max="3" step="0.01" value="2" data-subs-range data-min="6">
+            <o class="editable-multiplier" data-min="1" data-max="3" data-for="6">2.00x</o>
           </div>
           <div class="slider-field">
             <label>9 Month Sub <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="3" step="0.1" value="2.5" data-subs-range data-min="9">
-            <o>2.50x</o>
+            <input type="range" min="1" max="3" step="0.01" value="2.5" data-subs-range data-min="9">
+            <o class="editable-multiplier" data-min="1" data-max="3" data-for="9">2.50x</o>
           </div>
           <div class="slider-field">
             <label>12 Month Sub <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="4" step="0.1" value="3" data-subs-range data-min="12">
-            <o>3.00x</o>
+            <input type="range" min="1" max="4" step="0.01" value="3" data-subs-range data-min="12">
+            <o class="editable-multiplier" data-min="1" data-max="4" data-for="12">3.00x</o>
           </div>
           <div class="slider-field">
             <label>18 Month Sub <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="4" step="0.1" value="3.5" data-subs-range data-min="18">
-            <o>3.50x</o>
+            <input type="range" min="1" max="4" step="0.01" value="3.5" data-subs-range data-min="18">
+            <o class="editable-multiplier" data-min="1" data-max="4" data-for="18">3.50x</o>
           </div>
           <div class="slider-field">
             <label>24 Month Sub <small>Adjust luck multiplier</small></label>
-            <input type="range" min="1" max="5" step="0.1" value="4" data-subs-range data-min="24">
-            <o>4.00x</o>
+            <input type="range" min="1" max="5" step="0.01" value="4" data-subs-range data-min="24">
+            <o class="editable-multiplier" data-min="1" data-max="5" data-for="24">4.00x</o>
           </div>
         </div>
       </div>
@@ -409,7 +383,7 @@
               <span id="winnerCreatedAt" class="info-value">Loading...</span>
             </div>
             <div class="account-created-item">
-              <span id="winnerFollowStatus" class="info-value" style="text-align: right; width: 100%;">Loading...</span>
+              <span id="winnerFollowStatus" class="info-value" style="text-align: center; width: 100%;">Loading...</span>
             </div>
           </div>
         </div>
@@ -517,151 +491,6 @@
       display: flex;
       align-items: center;
       gap: 8px;
-    }
-
-    /* Sort Dropdown Styles */
-    .sort-dropdown {
-      position: relative;
-      display: flex;
-      align-items: center;
-    }
-
-    .sort-btn {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      color: var(--muted);
-      border-radius: 8px;
-      width: 32px;
-      height: 32px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      padding: 0;
-    }
-
-    .sort-btn:hover {
-      background: var(--purple);
-      color: white;
-      border-color: var(--purple);
-    }
-
-    .sort-btn i {
-      width: 16px;
-      height: 16px;
-    }
-
-    .sort-menu {
-      position: absolute;
-      top: 100%;
-      right: 0;
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.6);
-      min-width: 170px;
-      z-index: 1001;
-      opacity: 0;
-      visibility: hidden;
-      transform: translateY(-8px) scale(0.95);
-      transition: all 0.2s ease;
-      margin-top: 4px;
-    }
-
-    .sort-menu.show {
-      opacity: 1;
-      visibility: visible;
-      transform: translateY(0) scale(1);
-    }
-
-    .sort-option {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 12px;
-      cursor: pointer;
-      transition: background-color 0.2s ease;
-      font-size: 12px;
-      color: var(--text);
-      white-space: nowrap;
-      line-height: 1.2;
-    }
-
-    .sort-option:hover {
-      background: rgba(255,255,255,0.08);
-    }
-
-    .sort-option:first-child {
-      border-radius: 7px 7px 0 0;
-    }
-
-    .sort-option:last-child {
-      border-radius: 0 0 7px 7px;
-    }
-
-    .sort-option i {
-      width: 12px;
-      height: 12px;
-      color: var(--muted);
-      flex-shrink: 0;
-    }
-
-    .sort-option:active {
-      background: rgba(255,255,255,0.12);
-      transform: scale(0.98);
-    }
-
-    .participants-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px;
-    }
-
-    .participants-header h3 {
-      margin: 0;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex: 1;
-    }
-
-    .search-sort-controls {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .participants-header .search-field {
-      position: relative;
-      width: 200px;
-    }
-
-    .participants-header .search-field input {
-      width: 100%;
-      padding-right: 32px;
-      height: 32px;
-      border: 1px solid var(--line);
-      background: var(--panel);
-      color: var(--text);
-      border-radius: 8px;
-      padding-left: 10px;
-    }
-
-    .participants-header .search-field input:focus {
-      border-color: var(--purple);
-      outline: none;
-    }
-
-    .participants-header .search-field i {
-      position: absolute;
-      right: 10px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--muted);
-      width: 16px;
-      height: 16px;
     }
     
     /* Spin animation for refresh button */
