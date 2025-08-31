@@ -770,10 +770,13 @@ hideResetConfirmation() {
         const setting = this.currentSettings.luck.bits.find(b => b.min === minValue);
         if (setting) {
           slider.value = setting.mult;
-          const output = slider.parentElement.querySelector('o');
+          const output = slider.parentElement.querySelector('.editable-multiplier[data-for="' + minValue + '"]');
+          
           if (output) {
             output.textContent = `${setting.mult.toFixed(2)}x`;
           }
+          // Update slider fill
+          this.updateSliderFill(slider);
           console.log(`Bit-Regler aktualisiert für ${minValue}: ${setting.mult}x`);
         }
       });
@@ -785,10 +788,13 @@ hideResetConfirmation() {
         const setting = this.currentSettings.luck.subs.find(s => s.min === minValue);
         if (setting) {
           slider.value = setting.mult;
-          const output = slider.parentElement.querySelector('o');
+          const output = slider.parentElement.querySelector('.editable-multiplier[data-for="' + minValue + '"]');
+          
           if (output) {
             output.textContent = `${setting.mult.toFixed(2)}x`;
           }
+          // Update slider fill
+          this.updateSliderFill(slider);
           console.log(`Sub-Regler aktualisiert für ${minValue}: ${setting.mult}x`);
         }
       });
@@ -805,18 +811,116 @@ hideResetConfirmation() {
       }
     },
 
+    updateSliderFill(slider) {
+      const min = parseFloat(slider.min);
+      const max = parseFloat(slider.max);
+      const value = parseFloat(slider.value);
+      const percentage = ((value - min) / (max - min)) * 100;
+      
+      // Use requestAnimationFrame for smooth animation
+      requestAnimationFrame(() => {
+        slider.style.setProperty('--fill-percent', `${percentage}%`);
+      });
+    },
+
+    makeMultiplierEditable(element) {
+      const originalText = element.textContent;
+      const min = parseFloat(element.dataset.min);
+      const max = parseFloat(element.dataset.max);
+      const dataFor = element.dataset.for;
+      
+      element.contentEditable = true;
+      element.classList.add('editing');
+      element.focus();
+      
+      // Select all text
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      
+      const finishEditing = () => {
+        element.contentEditable = false;
+        element.classList.remove('editing');
+        
+        // Parse value (remove 'x' suffix)
+        let value = parseFloat(element.textContent.replace('x', ''));
+        
+        // Validate and clamp value
+        if (isNaN(value) || value < min || value > max) {
+          value = Math.max(min, Math.min(max, value || min));
+        }
+        
+        // Update display
+        element.textContent = `${value.toFixed(2)}x`;
+        
+        // Find and update corresponding slider
+        const slider = element.parentElement.querySelector(`[data-min="${dataFor}"]`);
+        if (slider) {
+          slider.value = value;
+          this.updateSliderFill(slider);
+          
+          // Update settings
+          if (slider.hasAttribute('data-bits-range')) {
+            const setting = this.currentSettings.luck.bits.find(b => b.min === parseInt(dataFor));
+            if (setting) setting.mult = value;
+          } else if (slider.hasAttribute('data-subs-range')) {
+            const setting = this.currentSettings.luck.subs.find(s => s.min === parseInt(dataFor));
+            if (setting) setting.mult = value;
+          }
+        }
+      };
+      
+      element.addEventListener('blur', finishEditing, { once: true });
+      const handleKeydown = (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+          element.blur();
+          return false;
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          element.textContent = originalText;
+          element.blur();
+          return false;
+        }
+      };
+      
+      element.addEventListener('keydown', handleKeydown);
+      element.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          return false;
+        }
+      });
+      
+      // Remove event listeners when editing finishes
+      const originalFinishEditing = finishEditing;
+      finishEditing = () => {
+        element.removeEventListener('keydown', handleKeydown);
+        originalFinishEditing();
+      };
+    },
+
     initializeSliderEvents() {
       // Bit Badge Slider Events
       const bitSliders = document.querySelectorAll('[data-bits-range]');
       bitSliders.forEach(slider => {
+        const minValue = parseInt(slider.dataset.min);
+        const output = slider.parentElement.querySelector('.editable-multiplier[data-for="' + minValue + '"]');
+        
+        // Set initial fill
+        this.updateSliderFill(slider);
+        
         slider.addEventListener('input', (e) => {
           const value = parseFloat(e.target.value);
-          const output = e.target.parentElement.querySelector('o');
           if (output) {
             output.textContent = `${value.toFixed(2)}x`;
           }
-
-          const minValue = parseInt(e.target.dataset.min);
+          this.updateSliderFill(e.target);
+          
           const setting = this.currentSettings.luck.bits.find(b => b.min === minValue);
           if (setting) {
             setting.mult = value;
@@ -827,17 +931,32 @@ hideResetConfirmation() {
       // Subscription Slider Events
       const subSliders = document.querySelectorAll('[data-subs-range]');
       subSliders.forEach(slider => {
+        const minValue = parseInt(slider.dataset.min);
+        const output = slider.parentElement.querySelector('.editable-multiplier[data-for="' + minValue + '"]');
+        
+        // Set initial fill
+        this.updateSliderFill(slider);
+        
         slider.addEventListener('input', (e) => {
           const value = parseFloat(e.target.value);
-          const output = e.target.parentElement.querySelector('o');
           if (output) {
             output.textContent = `${value.toFixed(2)}x`;
           }
-
-          const minValue = parseInt(e.target.dataset.min);
+          this.updateSliderFill(e.target);
+          
           const setting = this.currentSettings.luck.subs.find(s => s.min === minValue);
           if (setting) {
             setting.mult = value;
+          }
+        });
+      });
+
+      // Editable multiplier click events
+      const editableMultipliers = document.querySelectorAll('.editable-multiplier');
+      editableMultipliers.forEach(element => {
+        element.addEventListener('click', () => {
+          if (!element.classList.contains('editing')) {
+            this.makeMultiplierEditable(element);
           }
         });
       });
@@ -1306,34 +1425,24 @@ if (!res.ok) {
       UIManager.hideResetConfirmation();
       
       try {
-        // If giveaway is active/paused, only clear participants (keep giveaway running)
-        if (AppState.giveaway.status === 'ACTIVE' || AppState.giveaway.status === 'PAUSED') {
-          const res = await makeAuthenticatedRequest('/api/giveaway/participants/clear', { method: 'POST' });
-          if (res.ok) {
-            UIManager.showToast('Participants cleared - giveaway continues', 'success');
-          } else {
-            UIManager.showToast('Failed to clear participants', 'error');
-          }
-        } else {
-          // If giveaway is inactive, do full reset (stop everything)
-          TimerManager.stop();
+        // Always do full reset - stop the entire giveaway
+        TimerManager.stop();
+        
+        const res = await makeAuthenticatedRequest('/api/giveaway/stop', { method: 'POST' });
+        if (res.ok) {
+          StateManager.updateStatus('INACTIVE');
           
-          const res = await makeAuthenticatedRequest('/api/giveaway/stop', { method: 'POST' });
-          if (res.ok) {
-            StateManager.updateStatus('INACTIVE');
-            
-            // Beim kompletten Reset entferne alle Konfetti-Animationen
-            const confettiContainer = document.getElementById('confettiContainer');
-            if (confettiContainer) {
-              confettiContainer.innerHTML = '';
-            }
-            
-            UIManager.showToast('Giveaway reset successfully');
-            console.log('Giveaway zurückgesetzt');
-          } else {
-            const errorData = await res.json().catch(() => ({}));
-            throw new Error(`Server error (${res.status}): ${errorData.error || 'Unknown error'}`);
+          // Beim kompletten Reset entferne alle Konfetti-Animationen
+          const confettiContainer = document.getElementById('confettiContainer');
+          if (confettiContainer) {
+            confettiContainer.innerHTML = '';
           }
+          
+          UIManager.showToast('Giveaway reset successfully');
+          console.log('Giveaway zurückgesetzt');
+        } else {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(`Server error (${res.status}): ${errorData.error || 'Unknown error'}`);
         }
       } catch (e) {
         console.error('Reset fehlgeschlagen:', e);
