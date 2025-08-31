@@ -1263,38 +1263,38 @@ function parseWordEmotes(text, emoteMap, provider) {
   return result;
 }
 
-// ===================== LUCK BERECHNUNG MIT TWITCH API =====================
+// ===================== LUCK BERECHNUNG MIT TWITCH API ===================== 
 function computeLuckFromTwitchAPI(subMonths, totalBits, userId) {
   const userSession = getUserSession(userId);
   if (!userSession.luckSettings.enabled) return 1.0;
 
-  let totalLuck = 1.0; // Basiswert
+  let totalLuck = 1.0; // Basiswert = 1x (hat jeder automatisch)
 
-  // Bits Multiplier
+  // Bits Multiplier - ADDIERE den konfigurierten Wert
   if (totalBits > 0) {
     console.log(`💎 Checking bits: ${totalBits}`);
     for (const tier of userSession.luckSettings.bits.slice().reverse()) {
       if (totalBits >= tier.min) {
-        totalLuck *= tier.mult;
-        console.log(`💎 Applied bits multiplier: ${tier.mult}x for ${tier.min}+ bits`);
+        totalLuck += tier.mult;
+        console.log(`💎 Applied bits multiplier: +${tier.mult}x for ${tier.min}+ bits`);
         break;
       }
     }
   }
 
-  // Subscription Multiplier
+  // Subscription Multiplier - ADDIERE den konfigurierten Wert  
   if (subMonths > 0) {
     console.log(`👑 Checking subscription: ${subMonths} months`);
     for (const tier of userSession.luckSettings.subs.slice().reverse()) {
       if (subMonths >= tier.min) {
-        totalLuck *= tier.mult;
-        console.log(`👑 Applied sub multiplier: ${tier.mult}x for ${tier.min}+ months`);
+        totalLuck += tier.mult;
+        console.log(`👑 Applied sub multiplier: +${tier.mult}x for ${tier.min}+ months`);
         break;
       }
     }
   }
 
-  console.log(`🎲 Final luck calculation: ${totalLuck}x (Base: 1x, Bits: ${totalBits}, Sub: ${subMonths} months)`);
+  console.log(`🎲 Final luck: ${totalLuck.toFixed(2)}x (1x base + bonuses)`);
   return Math.round(totalLuck * 100) / 100;
 }
 
