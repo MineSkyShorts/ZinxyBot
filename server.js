@@ -236,7 +236,7 @@ function getUserSession(userId) {
         enabled: true,
         bits: [
           { min: 1000, mult: 1.2 },
-          { min: 5000, mult: 1.19 },
+          { min: 5000, mult: 1.5 },
           { min: 10000, mult: 2.0 },
           { min: 25000, mult: 3.0 },
           { min: 50000, mult: 4.0 },
@@ -245,7 +245,7 @@ function getUserSession(userId) {
         ],
         subs: [
           { min: 1, mult: 1.2 },
-          { min: 3, mult: 1.49 },
+          { min: 3, mult: 1.5 },
           { min: 6, mult: 2.0 },
           { min: 9, mult: 2.5 },
           { min: 12, mult: 3.0 },
@@ -1268,34 +1268,37 @@ function computeLuckFromTwitchAPI(subMonths, totalBits, userId) {
   const userSession = getUserSession(userId);
   if (!userSession.luckSettings.enabled) return 1.0;
 
-  let totalLuck = 1.0; // Basiswert = 1x (hat jeder automatisch)
+  let bitsBonus = 0.0; // Bonus für Bits
+  let subsBonus = 0.0; // Bonus für Subs
 
-  // Bits Multiplier - ADDIERE den konfigurierten Wert
+  // Bits Bonus - addiere zur Base
   if (totalBits > 0) {
     console.log(`💎 Checking bits: ${totalBits}`);
     for (const tier of userSession.luckSettings.bits.slice().reverse()) {
       if (totalBits >= tier.min) {
-        totalLuck += tier.mult;
-        console.log(`💎 Applied bits multiplier: +${tier.mult}x for ${tier.min}+ bits`);
+        bitsBonus = tier.mult - 1.0; // Konvertiere zu Bonus
+        console.log(`💎 Applied bits bonus: +${bitsBonus.toFixed(1)} for ${tier.min}+ bits`);
         break;
       }
     }
   }
 
-  // Subscription Multiplier - ADDIERE den konfigurierten Wert  
+  // Subscription Bonus - addiere zur Base
   if (subMonths > 0) {
     console.log(`👑 Checking subscription: ${subMonths} months`);
     for (const tier of userSession.luckSettings.subs.slice().reverse()) {
       if (subMonths >= tier.min) {
-        totalLuck += tier.mult;
-        console.log(`👑 Applied sub multiplier: +${tier.mult}x for ${tier.min}+ months`);
+        subsBonus = tier.mult - 1.0; // Konvertiere zu Bonus
+        console.log(`👑 Applied sub bonus: +${subsBonus.toFixed(1)} for ${tier.min}+ months`);
         break;
       }
     }
   }
 
-  console.log(`🎲 Final luck: ${totalLuck.toFixed(2)}x (1x base + bonuses)`);
-  return Math.round(totalLuck * 100) / 100;
+  // ADDITIV: Base + höchster Sub-Bonus + höchster Bits-Bonus
+  const finalLuck = 1.0 + subsBonus + bitsBonus;
+  console.log(`🎲 Final luck: ${finalLuck.toFixed(2)}x (1.0 base + ${subsBonus.toFixed(1)} sub + ${bitsBonus.toFixed(1)} bits)`);
+  return Math.round(finalLuck * 100) / 100;
 }
 
 // ===================== KORRIGIERTE LUCK BERECHNUNG - NUR BITS UND SUBS =====================
@@ -1303,7 +1306,8 @@ function computeLuckFromTags(tags, userId) {
   const userSession = getUserSession(userId);
   if (!userSession.luckSettings.enabled) return 1.0;
 
-  let totalLuck = 1.0;
+  let bitsBonus = 0.0; // Bonus für Bits
+  let subsBonus = 0.0; // Bonus für Subs
   let badges = tags.badges || tags['badges-raw'] || '';
   let badgeInfo = tags['badge-info'] || '';
 
@@ -1315,57 +1319,54 @@ function computeLuckFromTags(tags, userId) {
     badgeInfo = String(badgeInfo || '');
   }
 
-  console.log(`ðŸŽ¯ Computing luck for user with badges: ${badges}, badge-info: ${badgeInfo}`);
+  console.log(`🎯 Computing luck for user with badges: ${badges}, badge-info: ${badgeInfo}`);
 
-  // âœ… KORRIGIERTE BIT BADGES LOGIK
+  // ✅ BIT BADGES LOGIK - addiere Bonus
   const bitsMatch = badges.match(/bits\/(\d+)/);
   if (bitsMatch) {
     const bitAmount = parseInt(bitsMatch[1]);
-    console.log(`ðŸ’Ž Found bits badge with amount: ${bitAmount}`);
+    console.log(`💎 Found bits badge with amount: ${bitAmount}`);
     
-    // Finde die hÃ¶chste passende Tier (von groÃŸ zu klein)
+    // Finde die höchste passende Tier (von groß zu klein)
     for (const tier of userSession.luckSettings.bits.slice().reverse()) {
       if (bitAmount >= tier.min) {
-        totalLuck *= tier.mult;
-        console.log(`ðŸ’Ž Applied bits multiplier: ${tier.mult}x for ${tier.min}+ bits`);
+        bitsBonus = tier.mult - 1.0; // Konvertiere zu Bonus
+        console.log(`💎 Applied bits bonus: +${bitsBonus.toFixed(1)} for ${tier.min}+ bits`);
         break;
       }
     }
   }
 
-  // âœ… KORRIGIERTE SUBSCRIBER BADGES LOGIK
-  if (badges.includes('subscriber/') || badges.includes('founder/')) {
+  // ✅ SUBSCRIBER BADGES LOGIK - nur echte Subscriber, NICHT Founder
+  if (badges.includes('subscriber/')) {
     // Suche nach subscriber Monaten in badge-info
     const subMatch = badgeInfo.match(/subscriber\/(\d+)/);
     if (subMatch) {
       const subMonths = parseInt(subMatch[1]);
-      console.log(`ðŸ‘‘ Found subscriber with ${subMonths} months`);
+      console.log(`👑 Found subscriber with ${subMonths} months`);
       
-      // Finde die hÃ¶chste passende Tier (von groÃŸ zu klein)
+      // Finde die höchste passende Tier (von groß zu klein)
       for (const tier of userSession.luckSettings.subs.slice().reverse()) {
         if (subMonths >= tier.min) {
-          totalLuck *= tier.mult;
-          console.log(`ðŸ‘‘ Applied sub multiplier: ${tier.mult}x for ${tier.min}+ months`);
+          subsBonus = tier.mult - 1.0; // Konvertiere zu Bonus
+          console.log(`👑 Applied sub bonus: +${subsBonus.toFixed(1)} for ${tier.min}+ months`);
           break;
         }
       }
     } else {
-      // Fallback fÃ¼r neue Subscriber ohne badge-info
+      // Fallback für neue Subscriber ohne badge-info
       const defaultSubTier = userSession.luckSettings.subs.find(tier => tier.min === 1);
       if (defaultSubTier) {
-        totalLuck *= defaultSubTier.mult;
-        console.log(`ðŸ‘‘ Applied default sub multiplier: ${defaultSubTier.mult}x`);
+        subsBonus = defaultSubTier.mult - 1.0; // Konvertiere zu Bonus
+        console.log(`👑 Applied default sub bonus: +${subsBonus.toFixed(1)}`);
       }
     }
   }
 
-  // âœ… ENTFERNT: Keine Bonusse mehr fÃ¼r Moderator/VIP/Broadcaster
-  // Nur Bits und Subscriber Badges bekommen Multiplier
-
-  const finalLuck = Math.round(totalLuck * 100) / 100;
-  console.log(`ðŸŽ² Final luck calculated: ${finalLuck}x`);
-
-  return finalLuck;
+  // ADDITIV: Base + höchster Sub-Bonus + höchster Bits-Bonus
+  const finalLuck = 1.0 + subsBonus + bitsBonus;
+  console.log(`🎲 Final luck: ${finalLuck.toFixed(2)}x (1.0 base + ${subsBonus.toFixed(1)} sub + ${bitsBonus.toFixed(1)} bits)`);
+  return Math.round(finalLuck * 100) / 100;
 }
 
 // âœ… KORRIGIERTE MULTIPLIER TEXT FUNKTION
@@ -1548,8 +1549,8 @@ async function checkUserBitsAndSubs(participantUserId, channelId, accessToken, t
         console.log(`💎 Found bits from badge: ${totalBits}`);
       }
       
-      // Get sub months from badge-info
-      if (badges.includes('subscriber/') || badges.includes('founder/')) {
+      // Get sub months from badge-info - nur echte Subscriber
+      if (badges.includes('subscriber/')) {
         const subMatch = badgeInfo.match(/subscriber\/(\d+)/);
         if (subMatch) {
           subMonths = parseInt(subMatch[1]);
@@ -1750,14 +1751,20 @@ class GiveawayManager {
     const participantUserId = tags['user-id'] || null;
     let luck = computeLuckFromTags(tags, userId); // Fallback zu Chat-Badges
     
-    // 🔥 NEUE TWITCH API PRÜFUNG für echte Subs & Bits
+    // 🔥 ENHANCED: Kombiniere Chat-Badges mit API-Daten für genauere Multiplier
     if (participantUserId && accessToken && this.channelId) {
       try {
-        const { subMonths, totalBits } = await checkUserBitsAndSubs(participantUserId, this.channelId, accessToken, tags);
-        luck = computeLuckFromTwitchAPI(subMonths, totalBits, userId);
-        console.log(`🎯 Using Twitch API luck: ${luck}x (${subMonths} months sub, ${totalBits} bits)`);
+        const { subMonths: apiSubMonths, totalBits: apiBits } = await checkUserBitsAndSubs(participantUserId, this.channelId, accessToken, tags);
+        
+        // Verwende API-Daten falls verfügbar, sonst Chat-Badges
+        if (apiSubMonths > 0 || apiBits > 0) {
+          luck = computeLuckFromTwitchAPI(apiSubMonths, apiBits, userId);
+          console.log(`🎯 Using enhanced API luck: ${luck}x (${apiSubMonths} months sub, ${apiBits} bits)`);
+        } else {
+          console.log(`🎯 Using chat badge luck: ${luck}x (API returned no data)`);
+        }
       } catch (e) {
-        console.log(`⚠️ API check failed, using badge luck: ${luck}x`);
+        console.log(`⚠️ API enhancement failed, using badge luck: ${luck}x`);
       }
     }
     
@@ -3160,6 +3167,37 @@ io.on('connection', (socket) => {
   });
 });
 
+
+// ===================== DEBUG TEST ENDPOINT =====================
+app.get('/test/multiplier/:userId', (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  
+  const userId = req.params.userId;
+  const testTags = {
+    'username': 'testuser',
+    'display-name': 'TestUser',
+    'user-id': '123456',
+    'badges': req.query.badges || '',
+    'badge-info': req.query.badgeinfo || ''
+  };
+  
+  console.log('\n=== MULTIPLIER TEST ===');
+  console.log(`Testing user ${userId} with:`);
+  console.log(`Badges: "${testTags.badges}"`);
+  console.log(`Badge-Info: "${testTags['badge-info']}"`);
+  
+  const luck = computeLuckFromTags(testTags, userId);
+  
+  res.json({
+    userId,
+    badges: testTags.badges,
+    badgeInfo: testTags['badge-info'],
+    calculatedLuck: luck,
+    explanation: `Basis 1x + Multiplier = ${luck}x`
+  });
+});
 
 // ===================== SERVER START =====================
 const port = process.env.PORT || 3000;
