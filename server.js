@@ -236,7 +236,7 @@ function getUserSession(userId) {
         enabled: true,
         bits: [
           { min: 1000, mult: 1.2 },
-          { min: 5000, mult: 1.5 },
+          { min: 5000, mult: 1.19 },
           { min: 10000, mult: 2.0 },
           { min: 25000, mult: 3.0 },
           { min: 50000, mult: 4.0 },
@@ -245,13 +245,13 @@ function getUserSession(userId) {
         ],
         subs: [
           { min: 1, mult: 1.2 },
-          { min: 3, mult: 1.5 },
+          { min: 3, mult: 1.49 },
           { min: 6, mult: 2.0 },
           { min: 9, mult: 2.5 },
           { min: 12, mult: 3.0 },
           { min: 18, mult: 3.5 },
           { min: 24, mult: 4.0 }
-        ]
+        ],
       },
       generalSettings: {
         autoJoinHost: false, // âœ… GEÃ„NDERT: Auto-join standardmÃ¤ÃŸig AUS
@@ -1263,6 +1263,41 @@ function parseWordEmotes(text, emoteMap, provider) {
   return result;
 }
 
+// ===================== LUCK BERECHNUNG MIT TWITCH API =====================
+function computeLuckFromTwitchAPI(subMonths, totalBits, userId) {
+  const userSession = getUserSession(userId);
+  if (!userSession.luckSettings.enabled) return 1.0;
+
+  let totalLuck = 1.0; // Basiswert
+
+  // Bits Multiplier
+  if (totalBits > 0) {
+    console.log(`💎 Checking bits: ${totalBits}`);
+    for (const tier of userSession.luckSettings.bits.slice().reverse()) {
+      if (totalBits >= tier.min) {
+        totalLuck *= tier.mult;
+        console.log(`💎 Applied bits multiplier: ${tier.mult}x for ${tier.min}+ bits`);
+        break;
+      }
+    }
+  }
+
+  // Subscription Multiplier
+  if (subMonths > 0) {
+    console.log(`👑 Checking subscription: ${subMonths} months`);
+    for (const tier of userSession.luckSettings.subs.slice().reverse()) {
+      if (subMonths >= tier.min) {
+        totalLuck *= tier.mult;
+        console.log(`👑 Applied sub multiplier: ${tier.mult}x for ${tier.min}+ months`);
+        break;
+      }
+    }
+  }
+
+  console.log(`🎲 Final luck calculation: ${totalLuck}x (Base: 1x, Bits: ${totalBits}, Sub: ${subMonths} months)`);
+  return Math.round(totalLuck * 100) / 100;
+}
+
 // ===================== KORRIGIERTE LUCK BERECHNUNG - NUR BITS UND SUBS =====================
 function computeLuckFromTags(tags, userId) {
   const userSession = getUserSession(userId);
@@ -1495,6 +1530,72 @@ async function getUserFollowInfo(userId, broadcasterId, accessToken) {
   }
 }
 
+// ===================== TWITCH API SUBS & BITS CHECKER =====================
+async function checkUserBitsAndSubs(participantUserId, channelId, accessToken) {
+  try {
+    let subMonths = 0;
+    let totalBits = 0;
+    
+    // Check subscription status
+    try {
+      const subResponse = await axios.get(`${TWITCH_API}/subscriptions`, {
+        headers: {
+          'Client-Id': process.env.TWITCH_CLIENT_ID,
+          'Authorization': `Bearer ${accessToken}`
+        },
+        params: {
+          broadcaster_id: channelId,
+          user_id: participantUserId
+        }
+      });
+      
+      if (subResponse.data.data && subResponse.data.data.length > 0) {
+        const sub = subResponse.data.data[0];
+        if (sub.tier) {
+          // Extract months from created_at or use a default value
+          const createdAt = new Date(sub.created_at);
+          const now = new Date();
+          const monthsDiff = Math.floor((now - createdAt) / (1000 * 60 * 60 * 24 * 30));
+          subMonths = Math.max(1, monthsDiff); // At least 1 month if subscribed
+          console.log(`📺 User ${participantUserId} is subscribed for ${subMonths} months`);
+        }
+      }
+    } catch (e) {
+      console.log(`📺 No subscription found for user ${participantUserId}`);
+    }
+    
+    // Check bits leaderboard for total bits
+    try {
+      const bitsResponse = await axios.get(`${TWITCH_API}/bits/leaderboard`, {
+        headers: {
+          'Client-Id': process.env.TWITCH_CLIENT_ID,
+          'Authorization': `Bearer ${accessToken}`
+        },
+        params: {
+          count: 100,
+          period: 'all',
+          user_id: participantUserId
+        }
+      });
+      
+      if (bitsResponse.data.data && bitsResponse.data.data.length > 0) {
+        const userBits = bitsResponse.data.data.find(entry => entry.user_id === participantUserId);
+        if (userBits) {
+          totalBits = userBits.score;
+          console.log(`💎 User ${participantUserId} has ${totalBits} total bits`);
+        }
+      }
+    } catch (e) {
+      console.log(`💎 No bits data found for user ${participantUserId}`);
+    }
+    
+    return { subMonths, totalBits };
+  } catch (e) {
+    console.error('❌ Error checking user bits and subs:', e);
+    return { subMonths: 0, totalBits: 0 };
+  }
+}
+
 // ===================== GIVEAWAY MANAGER - BENUTZERSPEZIFISCH =====================
 class GiveawayManager {
   constructor() {
@@ -1616,7 +1717,7 @@ class GiveawayManager {
     return false;
   }
 
-  tryAdd(tags, message, userId) {
+  async tryAdd(tags, message, userId, accessToken = null) {
     if (this.state !== 'collect') return false;
     if (!message) return false;
 
@@ -1648,7 +1749,19 @@ class GiveawayManager {
     if (!pattern.test(msgNorm)) return false;
 
     const participantUserId = tags['user-id'] || null;
-    const luck = computeLuckFromTags(tags, userId);
+    let luck = computeLuckFromTags(tags, userId); // Fallback zu Chat-Badges
+    
+    // 🔥 NEUE TWITCH API PRÜFUNG für echte Subs & Bits
+    if (participantUserId && accessToken && this.channelId) {
+      try {
+        const { subMonths, totalBits } = await checkUserBitsAndSubs(participantUserId, this.channelId, accessToken);
+        luck = computeLuckFromTwitchAPI(subMonths, totalBits, userId);
+        console.log(`🎯 Using Twitch API luck: ${luck}x (${subMonths} months sub, ${totalBits} bits)`);
+      } catch (e) {
+        console.log(`⚠️ API check failed, using badge luck: ${luck}x`);
+      }
+    }
+    
     const badges = parseBadges(tags, userId);
 
     const participant = {
@@ -1659,7 +1772,7 @@ class GiveawayManager {
       luck,
       badges,
       multiplierText: getMultiplierText(luck),
-      profileImageUrl: null
+      profileImageUrl: null,
     };
 
     this.participants.set(login, participant);
@@ -1897,7 +2010,7 @@ async function ensureTmiClient(sessionData, userId) {
     );
     
     
-    const result = userSession.giveaway.tryAdd(tags, message, userId);
+    const result = await userSession.giveaway.tryAdd(tags, message, userId, sessionData.twitch.access_token);
 
     if (result && result.type === 'spam_blocked') {
       emitToUser(userId, 'participant:spam_blocked', result);
@@ -2299,7 +2412,7 @@ app.put('/api/settings/luck', requireAuth, rateLimit, (req, res) => {
   if (Array.isArray(subs)) {
     const validSubs = subs.filter(s => typeof s.min === 'number' && typeof s.mult === 'number');
     userSession.luckSettings.subs = validSubs.sort((a, b) => a.min - b.min);
-    console.log(`ðŸ‘‘ Updated subs settings:`, userSession.luckSettings.subs);
+    console.log(`ðŸ'' Updated subs settings:`, userSession.luckSettings.subs);
   }
   
   // âœ… WICHTIG: Aktualisiere alle existing participants
@@ -2852,7 +2965,7 @@ app.post('/api/chat/send', async (req, res) => {
       global.recentWebsiteMessages.delete(messageKey);
     }, 3000);
 
-    const participant = userSession.giveaway.tryAdd(simulatedTags, text, userId);
+    const participant = await userSession.giveaway.tryAdd(simulatedTags, text, userId, req.session.twitch.access_token);
     await client.say(ch, text);
 
     const badges = parseBadges(simulatedTags, userId);
