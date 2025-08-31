@@ -1531,41 +1531,39 @@ async function getUserFollowInfo(userId, broadcasterId, accessToken) {
 }
 
 // ===================== TWITCH API SUBS & BITS CHECKER =====================
-async function checkUserBitsAndSubs(participantUserId, channelId, accessToken) {
+async function checkUserBitsAndSubs(participantUserId, channelId, accessToken, tags = null) {
   try {
     let subMonths = 0;
     let totalBits = 0;
     
-    // Check subscription status
-    try {
-      const subResponse = await axios.get(`${TWITCH_API}/subscriptions`, {
-        headers: {
-          'Client-Id': process.env.TWITCH_CLIENT_ID,
-          'Authorization': `Bearer ${accessToken}`
-        },
-        params: {
-          broadcaster_id: channelId,
-          user_id: participantUserId
-        }
-      });
+    // FALLBACK: Extract from chat badges first (reliable method)
+    if (tags) {
+      const badges = tags.badges || tags['badges-raw'] || '';
+      const badgeInfo = tags['badge-info'] || '';
       
-      if (subResponse.data.data && subResponse.data.data.length > 0) {
-        const sub = subResponse.data.data[0];
-        if (sub.tier) {
-          // Extract months from created_at or use a default value
-          const createdAt = new Date(sub.created_at);
-          const now = new Date();
-          const monthsDiff = Math.floor((now - createdAt) / (1000 * 60 * 60 * 24 * 30));
-          subMonths = Math.max(1, monthsDiff); // At least 1 month if subscribed
-          console.log(`📺 User ${participantUserId} is subscribed for ${subMonths} months`);
+      // Get bits from badges
+      const bitsMatch = badges.match(/bits\/(\d+)/);
+      if (bitsMatch) {
+        totalBits = parseInt(bitsMatch[1]);
+        console.log(`💎 Found bits from badge: ${totalBits}`);
+      }
+      
+      // Get sub months from badge-info
+      if (badges.includes('subscriber/') || badges.includes('founder/')) {
+        const subMatch = badgeInfo.match(/subscriber\/(\d+)/);
+        if (subMatch) {
+          subMonths = parseInt(subMatch[1]);
+          console.log(`📺 Found sub months from badge-info: ${subMonths}`);
+        } else {
+          subMonths = 1; // Default if subscribed but no badge-info
+          console.log(`📺 User is subscribed (no badge-info, default 1 month)`);
         }
       }
-    } catch (e) {
-      console.log(`📺 No subscription found for user ${participantUserId}`);
     }
     
-    // Check bits leaderboard for total bits
+    // API ENHANCEMENT: Try to get more accurate data from API (optional)
     try {
+      // Check bits via Twitch API (less reliable, often empty)
       const bitsResponse = await axios.get(`${TWITCH_API}/bits/leaderboard`, {
         headers: {
           'Client-Id': process.env.TWITCH_CLIENT_ID,
@@ -1580,15 +1578,16 @@ async function checkUserBitsAndSubs(participantUserId, channelId, accessToken) {
       
       if (bitsResponse.data.data && bitsResponse.data.data.length > 0) {
         const userBits = bitsResponse.data.data.find(entry => entry.user_id === participantUserId);
-        if (userBits) {
+        if (userBits && userBits.score > totalBits) {
           totalBits = userBits.score;
-          console.log(`💎 User ${participantUserId} has ${totalBits} total bits`);
+          console.log(`💎 Updated bits from API: ${totalBits}`);
         }
       }
     } catch (e) {
-      console.log(`💎 No bits data found for user ${participantUserId}`);
+      console.log(`💎 API bits check failed, using badge data: ${totalBits}`);
     }
     
+    console.log(`🎯 Final API result: ${subMonths} months sub, ${totalBits} bits`);
     return { subMonths, totalBits };
   } catch (e) {
     console.error('❌ Error checking user bits and subs:', e);
@@ -1754,7 +1753,7 @@ class GiveawayManager {
     // 🔥 NEUE TWITCH API PRÜFUNG für echte Subs & Bits
     if (participantUserId && accessToken && this.channelId) {
       try {
-        const { subMonths, totalBits } = await checkUserBitsAndSubs(participantUserId, this.channelId, accessToken);
+        const { subMonths, totalBits } = await checkUserBitsAndSubs(participantUserId, this.channelId, accessToken, tags);
         luck = computeLuckFromTwitchAPI(subMonths, totalBits, userId);
         console.log(`🎯 Using Twitch API luck: ${luck}x (${subMonths} months sub, ${totalBits} bits)`);
       } catch (e) {
