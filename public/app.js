@@ -711,7 +711,7 @@ hideResetConfirmation() {
         enabled: true,
         bits: [
           { min: 1000, mult: 1.2 },
-          { min: 5000, mult: 1.5 },
+          { min: 5000, mult: 1.19 },
           { min: 10000, mult: 2.0 },
           { min: 25000, mult: 3.0 },
           { min: 50000, mult: 4.0 },
@@ -720,13 +720,13 @@ hideResetConfirmation() {
         ],
         subs: [
           { min: 1, mult: 1.2 },
-          { min: 3, mult: 1.5 },
+          { min: 3, mult: 1.49 },
           { min: 6, mult: 2.0 },
           { min: 9, mult: 2.5 },
           { min: 12, mult: 3.0 },
           { min: 18, mult: 3.5 },
           { min: 24, mult: 4.0 }
-        ]
+        ],
       },
       general: {
         autoJoinHost: true,
@@ -809,6 +809,7 @@ hideResetConfirmation() {
       if (antispamCheckbox) {
         antispamCheckbox.checked = this.currentSettings.general.antispam;
       }
+
     },
 
     updateSliderFill(slider) {
@@ -984,6 +985,7 @@ hideResetConfirmation() {
           this.saveSettings();
         });
       }
+
     },
 
     async saveSettings() {
